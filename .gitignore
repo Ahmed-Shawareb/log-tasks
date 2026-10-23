@@ -1,0 +1,23 @@
+node_modules/
+.next/
+out/
+build/
+.vercel/
+*.tsbuildinfo
+next-env.d.ts
+
+# secrets — never commit
+.env
+.env.*
+!.env.example
+
+# local data
+.pgdata/
+storage/
+coverage/
+*.log
+
+# generated sign-in credentials — never commit
+CREDENTIALS.local.md
+*.local.md
+.env*.local
