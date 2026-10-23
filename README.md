@@ -310,6 +310,11 @@ Create a **private** repository on GitHub and push to it. `.env`, `.pgdata/` and
    npm run purge-test-data -- --yes
    ```
 
+**When the database secrets are marked "Sensitive" in Vercel** (the Supabase integration does this), they cannot be pulled to a laptop. Use the one-time endpoint instead:
+1. Add a `SETUP_TOKEN` (32+ random characters) to the Production environment and redeploy.
+2. Call `POST https://<site>/api/setup/provision` with `Authorization: Bearer <SETUP_TOKEN>` (`?force=1` to re-issue passwords). It returns the one-time credentials once.
+3. Remove `SETUP_TOKEN` and redeploy. The endpoint then answers 404.
+
 ### Production: first administrator
 
 1. Seed the production reference data. This creates departments, templates and the real identities without passwords. No test accounts are created because `APP_ENV` is production.
