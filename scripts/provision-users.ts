@@ -12,7 +12,7 @@ import bcrypt from "bcryptjs";
 import { randomBytes } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import { DEPARTMENTS } from "../src/lib/constants";
-import { ROSTER, TEAMS } from "./roster";
+import { ROSTER, TEAMS } from "../src/server/roster";
 
 const db = new PrismaClient({ datasourceUrl: process.env.DIRECT_URL || process.env.DATABASE_URL || process.env.POSTGRES_URL_NON_POOLING });
 

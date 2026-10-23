@@ -21,3 +21,6 @@ coverage/
 CREDENTIALS.local.md
 *.local.md
 .env*.local
+
+.vercel
+.env*
