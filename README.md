@@ -294,6 +294,22 @@ Create a **private** repository on GitHub and push to it. `.env`, `.pgdata/` and
 
 4. When the preview is verified, merge to `main` to promote to **Production**.
 
+### Production: the real team (recommended)
+
+1. Edit the people in [`scripts/roster.ts`](scripts/roster.ts): 3 admins, Rawan, a Performance Manager, a Production Manager and the employees. Placeholder names say "(rename me)".
+2. With the production database URL in the environment, run:
+
+   ```bash
+   npm run provision-users
+   ```
+
+   Every listed person gets a new one-time password, written **only** to `CREDENTIALS.local.md` on your computer (git-ignored). They must change it at first sign-in. The script also creates the two teams and the private file bucket. Re-running it issues new passwords.
+3. To wipe all tasks, projects, clients and test accounts (a "fresh start"), keeping departments, templates and real users:
+
+   ```bash
+   npm run purge-test-data -- --yes
+   ```
+
 ### Production: first administrator
 
 1. Seed the production reference data. This creates departments, templates and the real identities without passwords. No test accounts are created because `APP_ENV` is production.
