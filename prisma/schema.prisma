@@ -1,0 +1,502 @@
+// LOG — task management platform
+// PostgreSQL everywhere: embedded Postgres locally (npm run db:start), Supabase PostgreSQL in production.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  ADMIN
+  ACCOUNT_MANAGER
+  PERFORMANCE_MANAGER
+  PRODUCTION_MANAGER
+  EMPLOYEE
+}
+
+enum TaskStatus {
+  BACKLOG
+  READY
+  SCHEDULED
+  IN_PROGRESS
+  SUBMITTED
+  CHANGES_REQUESTED
+  APPROVED
+  BLOCKED
+  ON_HOLD
+  CANCELLED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum ClientStatus {
+  PROSPECT
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+enum ProjectStatus {
+  PLANNING
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  ARCHIVED
+}
+
+enum LeaveType {
+  VACATION
+  SICK
+  UNAVAILABLE
+  OTHER
+}
+
+enum ReviewDecision {
+  APPROVED
+  CHANGES_REQUESTED
+}
+
+// ───────────────────────────── Identity ─────────────────────────────
+
+model User {
+  id                 String    @id @default(cuid())
+  name               String
+  email              String    @unique
+  passwordHash       String
+  role               Role
+  departmentId       String?
+  title              String?
+  phone              String?
+  bio                String?
+  avatarColor        String    @default("#7c3aed")
+  isActive           Boolean   @default(true)
+  isTestAccount      Boolean   @default(false)
+  mustChangePassword Boolean   @default(false)
+  // Working schedule (minutes from midnight in the company timezone; ISO weekdays 1=Mon … 7=Sun)
+  workDays           Int[]     @default([7, 1, 2, 3, 4])
+  workStartMin       Int       @default(540)
+  workEndMin         Int       @default(1080)
+  weeklyCapacityMin  Int       @default(2400)
+  lastLoginAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  department      Department?          @relation(fields: [departmentId], references: [id])
+  sessions        Session[]
+  resetTokens     PasswordResetToken[]
+  memberships     TeamMember[]
+  managedTeams    Team[]               @relation("TeamManager")
+  leaves          Leave[]              @relation("LeaveUser")
+  managedClients  Client[]             @relation("ClientAccountManager")
+  managedProjects Project[]            @relation("ProjectAccountManager")
+  createdTasks    Task[]               @relation("TaskCreator")
+  assignedTasks   Task[]               @relation("TaskAssignee")
+  reviewTasks     Task[]               @relation("TaskReviewer")
+  comments        Comment[]
+  submissions     Submission[]
+  reviews         Review[]
+  attachments     Attachment[]
+  notifications   Notification[]
+  activities      Activity[]
+  timeEntries     TimeEntry[]
+  handoffsFrom    Handoff[]            @relation("HandoffFrom")
+  handoffsTo      Handoff[]            @relation("HandoffTo")
+  handoffsBy      Handoff[]            @relation("HandoffBy")
+
+  @@index([role, isActive])
+  @@index([departmentId])
+}
+
+model Session {
+  id         String   @id @default(cuid())
+  tokenHash  String   @unique
+  userId     String
+  expiresAt  DateTime
+  lastSeenAt DateTime @default(now())
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model LoginAttempt {
+  id        String   @id @default(cuid())
+  email     String
+  ipAddress String
+  success   Boolean
+  createdAt DateTime @default(now())
+
+  @@index([email, createdAt])
+  @@index([ipAddress, createdAt])
+}
+
+model PasswordResetToken {
+  id          String    @id @default(cuid())
+  tokenHash   String    @unique
+  userId      String
+  createdById String?
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime  @default(now())
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ─────────────────────────── Organization ───────────────────────────
+
+model Department {
+  id          String   @id @default(cuid())
+  key         String   @unique // MANAGEMENT | ACCOUNTS | PERFORMANCE | PRODUCTION
+  name        String
+  color       String   @default("#7c3aed")
+  description String?
+  createdAt   DateTime @default(now())
+  users       User[]
+  teams       Team[]
+  tasks       Task[]
+  templates   TaskTemplate[]
+}
+
+model Team {
+  id           String       @id @default(cuid())
+  name         String       @unique
+  description  String?
+  departmentId String
+  managerId    String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  department   Department   @relation(fields: [departmentId], references: [id])
+  manager      User?        @relation("TeamManager", fields: [managerId], references: [id])
+  members      TeamMember[]
+}
+
+model TeamMember {
+  id        String   @id @default(cuid())
+  teamId    String
+  userId    String
+  createdAt DateTime @default(now())
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@index([userId])
+}
+
+model Leave {
+  id          String    @id @default(cuid())
+  userId      String
+  type        LeaveType @default(VACATION)
+  startsAt    DateTime
+  endsAt      DateTime
+  note        String?
+  createdById String?
+  createdAt   DateTime  @default(now())
+  user        User      @relation("LeaveUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startsAt, endsAt])
+}
+
+// ───────────────────────── Clients & projects ─────────────────────────
+
+model Client {
+  id               String       @id @default(cuid())
+  name             String
+  contactName      String?
+  contactEmail     String?
+  contactPhone     String?
+  industry         String?
+  notes            String?
+  status           ClientStatus @default(ACTIVE)
+  accountManagerId String?
+  isDemo           Boolean      @default(false)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  accountManager   User?        @relation("ClientAccountManager", fields: [accountManagerId], references: [id])
+  projects         Project[]
+
+  @@index([status])
+  @@index([accountManagerId])
+}
+
+model Project {
+  id               String        @id @default(cuid())
+  name             String
+  clientId         String
+  description      String?
+  requirements     String?
+  notes            String?
+  accountManagerId String?
+  status           ProjectStatus @default(PLANNING)
+  priority         Priority      @default(MEDIUM)
+  color            String        @default("#7c3aed")
+  startDate        DateTime?
+  targetDate       DateTime?
+  isDemo           Boolean       @default(false)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  client           Client        @relation(fields: [clientId], references: [id])
+  accountManager   User?         @relation("ProjectAccountManager", fields: [accountManagerId], references: [id])
+  tasks            Task[]
+
+  @@index([clientId])
+  @@index([accountManagerId])
+  @@index([status])
+}
+
+// ─────────────────────────────── Tasks ───────────────────────────────
+
+model Task {
+  id              String     @id @default(cuid())
+  number          Int        @unique @default(autoincrement())
+  title           String
+  description     String?
+  projectId       String?
+  parentId        String?
+  departmentId    String?
+  creatorId       String
+  assigneeId      String?
+  reviewerId      String?
+  priority        Priority   @default(MEDIUM)
+  status          TaskStatus @default(BACKLOG)
+  startDate       DateTime?
+  dueAt           DateTime?
+  scheduledStart  DateTime?
+  scheduledEnd    DateTime?
+  estimateMinutes Int?
+  labels          String[]   @default([])
+  position        Float      @default(0)
+  completedAt     DateTime?
+  archivedAt      DateTime?
+  version         Int        @default(1) // optimistic concurrency — every write bumps it
+  isDemo          Boolean    @default(false)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  project      Project?         @relation(fields: [projectId], references: [id])
+  parent       Task?            @relation("TaskTree", fields: [parentId], references: [id])
+  children     Task[]           @relation("TaskTree")
+  department   Department?      @relation(fields: [departmentId], references: [id])
+  creator      User             @relation("TaskCreator", fields: [creatorId], references: [id])
+  assignee     User?            @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  reviewer     User?            @relation("TaskReviewer", fields: [reviewerId], references: [id])
+  dependencies TaskDependency[] @relation("DependencyOf")
+  dependents   TaskDependency[] @relation("DependencyTarget")
+  checklist    ChecklistItem[]
+  comments     Comment[]
+  attachments  Attachment[]
+  submissions  Submission[]
+  activities   Activity[]
+  timeEntries  TimeEntry[]
+  handoffs     Handoff[]
+  notifications Notification[]
+
+  @@index([assigneeId, status])
+  @@index([departmentId, status])
+  @@index([projectId])
+  @@index([parentId])
+  @@index([dueAt])
+  @@index([scheduledStart, scheduledEnd])
+  @@index([archivedAt])
+}
+
+model TaskDependency {
+  id          String   @id @default(cuid())
+  taskId      String // the task that is waiting
+  dependsOnId String // the task that must finish first
+  createdAt   DateTime @default(now())
+  task        Task     @relation("DependencyOf", fields: [taskId], references: [id], onDelete: Cascade)
+  dependsOn   Task     @relation("DependencyTarget", fields: [dependsOnId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, dependsOnId])
+  @@index([dependsOnId])
+}
+
+model ChecklistItem {
+  id        String   @id @default(cuid())
+  taskId    String
+  text      String
+  done      Boolean  @default(false)
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  taskId    String
+  authorId  String
+  body      String
+  mentions  String[] @default([])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author    User     @relation(fields: [authorId], references: [id])
+
+  @@index([taskId, createdAt])
+}
+
+model Attachment {
+  id           String      @id @default(cuid())
+  taskId       String
+  submissionId String?
+  uploaderId   String
+  fileName     String
+  mimeType     String
+  size         Int
+  storageKey   String      @unique
+  createdAt    DateTime    @default(now())
+  task         Task        @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  submission   Submission? @relation(fields: [submissionId], references: [id])
+  uploader     User        @relation(fields: [uploaderId], references: [id])
+
+  @@index([taskId])
+  @@index([submissionId])
+}
+
+model Submission {
+  id          String       @id @default(cuid())
+  taskId      String
+  submitterId String
+  revision    Int
+  notes       String
+  links       String[]     @default([])
+  createdAt   DateTime     @default(now())
+  task        Task         @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  submitter   User         @relation(fields: [submitterId], references: [id])
+  attachments Attachment[]
+  review      Review?
+
+  @@unique([taskId, revision])
+}
+
+model Review {
+  id           String         @id @default(cuid())
+  submissionId String         @unique
+  reviewerId   String
+  decision     ReviewDecision
+  feedback     String?
+  createdAt    DateTime       @default(now())
+  submission   Submission     @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  reviewer     User           @relation(fields: [reviewerId], references: [id])
+}
+
+model TimeEntry {
+  id        String    @id @default(cuid())
+  taskId    String
+  userId    String
+  minutes   Int       @default(0)
+  note      String?
+  startedAt DateTime  @default(now())
+  endedAt   DateTime? // null while a live timer is running
+  createdAt DateTime  @default(now())
+  task      Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id])
+
+  @@index([taskId])
+  @@index([userId, startedAt])
+}
+
+/// Every change of owner is recorded so a task's chain of custody is never lost.
+model Handoff {
+  id         String   @id @default(cuid())
+  taskId     String
+  fromUserId String?
+  toUserId   String
+  byUserId   String
+  note       String?
+  createdAt  DateTime @default(now())
+  task       Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  fromUser   User?    @relation("HandoffFrom", fields: [fromUserId], references: [id])
+  toUser     User     @relation("HandoffTo", fields: [toUserId], references: [id])
+  byUser     User     @relation("HandoffBy", fields: [byUserId], references: [id])
+
+  @@index([taskId])
+}
+
+model TaskTemplate {
+  id           String      @id @default(cuid())
+  name         String      @unique
+  description  String?
+  departmentId String?
+  priority     Priority    @default(MEDIUM)
+  // { checklist: string[], subtasks: { title, departmentKey?, estimateMinutes?, offsetDays? }[] }
+  blueprint    Json
+  createdById  String?
+  createdAt    DateTime    @default(now())
+  department   Department? @relation(fields: [departmentId], references: [id])
+}
+
+// ─────────────────────── Notifications & history ───────────────────────
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  type      String
+  title     String
+  body      String?
+  taskId    String?
+  link      String?
+  dedupeKey String?   @unique
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task      Task?     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+}
+
+/// Task/project timeline visible to everyone who can see the task.
+model Activity {
+  id        String   @id @default(cuid())
+  taskId    String?
+  projectId String?
+  actorId   String?
+  action    String
+  data      Json?
+  createdAt DateTime @default(now())
+  task      Task?    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  actor     User?    @relation(fields: [actorId], references: [id])
+
+  @@index([taskId, createdAt])
+  @@index([createdAt])
+}
+
+/// Administrative audit trail — admin-only.
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actorEmail String?
+  actorRole  String?
+  action     String
+  entityType String
+  entityId   String?
+  before     Json?
+  after      Json?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([entityType, entityId])
+  @@index([actorId])
+}
+
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
