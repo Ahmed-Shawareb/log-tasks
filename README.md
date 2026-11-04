@@ -118,6 +118,48 @@ Try the scheduling rules: in **Calendar → Week**, drag a block outside working
 
 ---
 
+## The LOG flow
+
+1. **Admin** creates a task from one of the four main types, or a custom one. Exactly one task is created; nothing is added automatically. It goes to an **account manager**, a **team manager**, or **straight to an employee**.
+
+   | Type | Steps, in order |
+   |---|---|
+   | Videos Social Media | Script writing → Filming → Editing |
+   | Statics Social Media | Content creation → Designs |
+   | Videos Ads | Creative brief → Scripts → Filming → Editing |
+   | Statics Ads | Creative brief → Content → Designs |
+
+2. **Account manager** opens **Team planner**. The slider at the top shows every task waiting for them, with one row per step and how much of it is left. Below it is the team's calendar, one lane per person. They drag a step onto a person's day and choose **all of it** or **a specific number**. Each share becomes a part owned by that person, due that day.
+3. **Step order is enforced on the server**, unit by unit: by any day, a step can't have more units due than the previous step had due on *earlier* days. 5 videos filmed on the 20th need 5 scripts due by the 19th, and editing has to come after filming. Moving a script later than its filming is refused the same way.
+4. **Performance / Production managers** get their share in the same planner and split it inside their own team, under the same rule.
+5. **Employees** start → submit → the person who gave them the work approves or requests changes. When every part is approved and nothing is left to give out, the owner of the main task is notified.
+
+The main task ("30 Videos Social Media") is an **order**: it lives in the slider and on the project page, but it is not counted as a task in lists, the planner, the dashboard or progress. Its steps are the work.
+
+### Social media projects and the client dashboard
+
+- A project is **Standard** or **Social media**. A social media project asks **how many posts?** and gets a feed grid (3 across, like Instagram/TikTok) on its page. The account manager clicks a square and picks **Post** (one image + link), **Reel** (cover image + video link, shown with ▶) or **Carousel** (up to 10 images in order + link), with an optional go-live date and caption.
+- Videos are **not uploaded**: uploads are capped at a few MB (Vercel's request limit), so a reel links to where the video lives and the client opens it from the grid.
+- **Client dashboard** — `/portal` (staff use `/login`). The admin gives each client an email and password on the client's page (or when creating the client). The client sees their feed grid (and can download it as one PNG), every deliverable with its date and status, order progress per step, and a calendar. It refreshes on its own every 15 seconds.
+- Client logins are separate accounts with their own cookie: a client session can't open any staff page or API, sees only its own client's data, and never sees who does the work, comments or internal notes.
+
+To start the local database over with only the people in `src/server/roster.ts` (it refuses any database that isn't on this computer):
+
+```bash
+npm run reset-to-roster -- --yes
+```
+
+### Who can do what
+
+| | Sees | Gives work to |
+|---|---|---|
+| **Admin** | Everything, plus Users, Teams, Task types, Audit log | Anyone |
+| **Account Manager** | Their own projects (a client can have several account managers, one per project), tasks they created or own, and every part split from them (two levels down) | Their own team (they can be in it themselves, e.g. as content creator), Production/Performance people and managers |
+| **Performance / Production Manager** | Their department's tasks and anything they created | Only their own team |
+| **Employee** | Only tasks assigned to them (or subtasks they created) | Nobody — they do the work, submit it, and can record their own leave |
+
+Employees never see clients, other people's tasks, reports or admin pages. Every rule is enforced on the server: a hidden button is never the protection.
+
 ## Features
 
 **Organization**

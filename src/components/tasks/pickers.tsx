@@ -22,6 +22,15 @@ export function useEligible(department: string | null | undefined) {
   return { people, loading };
 }
 
+/** Picker grouping: managers by role, employees by team. */
+export function personGroup(p: { role: string; department: { name: string } | null }) {
+  if (p.role === "EMPLOYEE") return `Employees · ${p.department?.name ?? "No team"}`;
+  if (p.role === "SOCIAL_MEDIA_SPECIALIST") return "Social media";
+  if (p.role === "EXTERNAL") return "External (outsourced)";
+  if (p.role === "PERFORMANCE_MANAGER" || p.role === "PRODUCTION_MANAGER") return "Team managers";
+  return `${ROLE_LABEL[p.role as RoleKey]}s`;
+}
+
 export function AssigneeSelect({ department, value, onChange, allowNone = true, exclude, id }: {
   department: string | null | undefined; value: string; onChange: (v: string) => void; allowNone?: boolean; exclude?: string | null; id?: string;
 }) {
@@ -29,7 +38,7 @@ export function AssigneeSelect({ department, value, onChange, allowNone = true, 
   const groups = new Map<string, Person[]>();
   for (const p of people) {
     if (p.id === exclude) continue;
-    const g = p.department?.name ?? ROLE_LABEL[p.role as RoleKey];
+    const g = personGroup(p);
     groups.set(g, [...(groups.get(g) ?? []), p]);
   }
   return (

@@ -19,7 +19,8 @@
     "test:e2e": "vitest run --config vitest.e2e.config.mts",
     "vercel-build": "node scripts/vercel-build.mjs",
     "provision-users": "tsx --env-file-if-exists=.env scripts/provision-users.ts",
-    "purge-test-data": "tsx --env-file-if-exists=.env scripts/purge-test-data.ts"
+    "purge-test-data": "tsx --env-file-if-exists=.env scripts/purge-test-data.ts",
+    "reset-to-roster": "tsx --env-file-if-exists=.env scripts/reset-to-roster.ts"
   },
   "prisma": {
     "seed": "tsx --env-file-if-exists=.env prisma/seed.ts"

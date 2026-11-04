@@ -17,6 +17,8 @@ enum Role {
   PERFORMANCE_MANAGER
   PRODUCTION_MANAGER
   EMPLOYEE
+  SOCIAL_MEDIA_SPECIALIST // sees every social media project and its feed, publishes the posts
+  EXTERNAL // outsourced: works on the tasks given to them, exactly like an employee
 }
 
 enum TaskStatus {
@@ -52,6 +54,17 @@ enum ProjectStatus {
   ON_HOLD
   COMPLETED
   ARCHIVED
+}
+
+enum ProjectKind {
+  STANDARD
+  SOCIAL_MEDIA
+}
+
+enum PostKind {
+  POST
+  REEL
+  CAROUSEL
 }
 
 enum LeaveType {
@@ -226,6 +239,7 @@ model Client {
   updatedAt        DateTime     @updatedAt
   accountManager   User?        @relation("ClientAccountManager", fields: [accountManagerId], references: [id])
   projects         Project[]
+  portalUsers      ClientUser[]
 
   @@index([status])
   @@index([accountManagerId])
@@ -239,6 +253,8 @@ model Project {
   requirements     String?
   notes            String?
   accountManagerId String?
+  kind             ProjectKind   @default(STANDARD)
+  postCount        Int? // social media projects: how many posts the feed grid holds
   status           ProjectStatus @default(PLANNING)
   priority         Priority      @default(MEDIUM)
   color            String        @default("#7c3aed")
@@ -250,10 +266,72 @@ model Project {
   client           Client        @relation(fields: [clientId], references: [id])
   accountManager   User?         @relation("ProjectAccountManager", fields: [accountManagerId], references: [id])
   tasks            Task[]
+  posts            SocialPost[]
 
   @@index([clientId])
   @@index([accountManagerId])
   @@index([status])
+}
+
+/// One square of a social media project's feed grid (position 1 is the top-left square).
+model SocialPost {
+  id        String        @id @default(cuid())
+  projectId String
+  position  Int
+  kind      PostKind      @default(POST)
+  link      String? // where the published post / the video lives
+  driveLink String? // reels: the Drive folder with the cover and the video together
+  caption   String?
+  publishAt DateTime?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  project   Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  media     SocialMedia[]
+
+  @@unique([projectId, position])
+}
+
+/// An image of a post, in order (a carousel has several; a reel's image is its cover).
+model SocialMedia {
+  id         String     @id @default(cuid())
+  postId     String
+  position   Int        @default(0)
+  storageKey String     @unique
+  mimeType   String
+  size       Int
+  createdAt  DateTime   @default(now())
+  post       SocialPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+}
+
+// ─────────────────────────── Client dashboard ───────────────────────────
+
+/// A client's own login to the client dashboard. Completely separate from staff accounts.
+model ClientUser {
+  id           String          @id @default(cuid())
+  clientId     String
+  email        String          @unique
+  passwordHash String
+  isActive     Boolean         @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  client       Client          @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  sessions     ClientSession[]
+
+  @@index([clientId])
+}
+
+model ClientSession {
+  id           String     @id @default(cuid())
+  tokenHash    String     @unique
+  clientUserId String
+  expiresAt    DateTime
+  createdAt    DateTime   @default(now())
+  user         ClientUser @relation(fields: [clientUserId], references: [id], onDelete: Cascade)
+
+  @@index([clientUserId])
 }
 
 // ─────────────────────────────── Tasks ───────────────────────────────
@@ -276,6 +354,9 @@ model Task {
   scheduledStart  DateTime?
   scheduledEnd    DateTime?
   estimateMinutes Int?
+  typeId          String?
+  quantity        Int? // e.g. 60 videos — split between people with "distribute"
+  stage           Int? // index into type.stages when this task is one step of a staged task
   labels          String[]   @default([])
   position        Float      @default(0)
   completedAt     DateTime?
@@ -286,6 +367,7 @@ model Task {
   updatedAt       DateTime   @updatedAt
 
   project      Project?         @relation(fields: [projectId], references: [id])
+  type         TaskType?        @relation(fields: [typeId], references: [id])
   parent       Task?            @relation("TaskTree", fields: [parentId], references: [id])
   children     Task[]           @relation("TaskTree")
   department   Department?      @relation(fields: [departmentId], references: [id])
@@ -310,6 +392,7 @@ model Task {
   @@index([dueAt])
   @@index([scheduledStart, scheduledEnd])
   @@index([archivedAt])
+  @@index([typeId])
 }
 
 model TaskDependency {
@@ -426,6 +509,22 @@ model Handoff {
   byUser     User     @relation("HandoffBy", fields: [byUserId], references: [id])
 
   @@index([taskId])
+}
+
+/// Fixed, agency-standard deliverables (Videos, Creative brief, Media plan…). A unit makes the task countable.
+model TaskType {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  unit        String? // singular, e.g. "video" — null means not countable
+  unitPlural  String?
+  icon        String   @default("sparkles")
+  color       String   @default("#8b5cf6")
+  description String?
+  stages      String[] @default([]) // ordered steps, e.g. Script writing → Filming → Editing
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  tasks       Task[]
 }
 
 model TaskTemplate {

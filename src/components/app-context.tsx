@@ -1,6 +1,7 @@
 "use client";
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import type { SessionUser } from "@/server/permissions";
+import { isWorkerRole } from "@/lib/constants";
 
 export type CreateDefaults = {
   projectId?: string; parentId?: string; department?: string; assigneeId?: string; dueAt?: string; title?: string; templateId?: string;
@@ -30,7 +31,7 @@ export function AppProvider({ user, children }: { user: SessionUser; children: R
   const invalidate = useCallback(() => setDataVersion((v) => v + 1), []);
   const value = useMemo<Ctx>(() => ({
     user,
-    isManager: user.role !== "EMPLOYEE",
+    isManager: !isWorkerRole(user.role),
     isAdmin: user.role === "ADMIN",
     openTask: (id) => setOpenTaskId(String(id)),
     closeTask: () => setOpenTaskId(null),

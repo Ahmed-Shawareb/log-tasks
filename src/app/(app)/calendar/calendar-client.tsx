@@ -32,10 +32,10 @@ export function CalendarClient() {
   const sp = useSearchParams();
   const calRef = useRef<FullCalendar>(null);
   const queueRef = useRef<HTMLDivElement>(null);
-  const [view, setView] = useState<View>("timeGridWeek");
+  const [view, setView] = useState<View>("dayGridMonth");
   const [title, setTitle] = useState("");
   const [range, setRange] = useState<{ start: Date; end: Date } | null>(null);
-  const [scope, setScope] = useState<Scope>(sp.get("assigneeId") ? "person" : isManager ? (isAdmin ? "company" : "department") : "mine");
+  const [scope, setScope] = useState<Scope>(sp.get("assigneeId") ? "person" : isManager ? "company" : "mine");
   const [personId, setPersonId] = useState(sp.get("assigneeId") ?? "");
   const [teamId, setTeamId] = useState("");
   const [projectId, setProjectId] = useState("");
@@ -179,8 +179,10 @@ export function CalendarClient() {
 
   return (
     <div className="space-y-5">
-      <PageHeader eyebrow="Plan" title="Calendar" subtitle="Scheduled work blocks, deadlines and leave in one place. Drag to reschedule; drag the edge to resize."
+      <PageHeader eyebrow="Plan" title="Calendar" subtitle={isManager ? "Give out new work from the slider, then see every deadline below." : "Your deadlines and booked time."}
         actions={<Segmented options={VIEWS} value={view} onChange={(v) => { setView(v); api_()?.changeView(v); }} />} />
+
+
 
       <div className="glass flex flex-wrap items-center gap-2 rounded-2xl p-2">
         <div className="flex items-center gap-1">
@@ -212,7 +214,7 @@ export function CalendarClient() {
         </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1fr_300px]">
+      <div className={cn("grid gap-4", (view === "timeGridWeek" || view === "timeGridDay") && "xl:grid-cols-[1fr_300px]")}>
         <Card className="overflow-hidden p-3">
           <FullCalendar
             ref={calRef}
@@ -246,6 +248,7 @@ export function CalendarClient() {
           />
         </Card>
 
+        {(view === "timeGridWeek" || view === "timeGridDay") && (
         <aside className="space-y-4">
           <Card>
             <div className="flex items-center gap-2 border-b border-line px-4 py-3">
@@ -276,6 +279,7 @@ export function CalendarClient() {
             <div className="flex items-center gap-2"><CalendarClock className="h-3.5 w-3.5" /> Shaded hours are outside working time</div>
           </Card>
         </aside>
+        )}
       </div>
       <ConflictDialog state={conflict} onClose={() => setConflict(null)} />
     </div>

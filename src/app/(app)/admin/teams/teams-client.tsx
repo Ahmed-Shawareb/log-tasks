@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { Crown, Pencil, Plus, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
-import { DEPARTMENTS, ROLE_LABEL, type RoleKey } from "@/lib/constants";
+import { DEPARTMENTS, ROLE_LABEL, isWorkerRole, type RoleKey } from "@/lib/constants";
 import { api } from "@/lib/client";
 import { cn } from "@/lib/utils";
 import type { Person } from "@/lib/types";
@@ -89,7 +89,7 @@ function TeamModal({ team, open, onClose, onSaved }: { team: Team | null; open: 
       : { name: "", description: "", department: "PERFORMANCE", managerId: "", memberIds: [] });
   }, [open, team]);
   const eligible = people.filter((p) => !p.department || p.department.key === f.department || p.role === "ADMIN" || p.role === "ACCOUNT_MANAGER");
-  const managers = eligible.filter((p) => p.role !== "EMPLOYEE" && !(p.role === "PERFORMANCE_MANAGER" && f.department !== "PERFORMANCE") && !(p.role === "PRODUCTION_MANAGER" && f.department !== "PRODUCTION"));
+  const managers = eligible.filter((p) => !isWorkerRole(p.role) && !(p.role === "PERFORMANCE_MANAGER" && f.department !== "PERFORMANCE") && !(p.role === "PRODUCTION_MANAGER" && f.department !== "PRODUCTION"));
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();

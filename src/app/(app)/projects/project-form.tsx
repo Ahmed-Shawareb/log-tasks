@@ -11,6 +11,7 @@ import { Button, Field, Input, Modal, Select, Textarea } from "@/components/ui";
 export type ProjectInput = {
   id?: string; name: string; clientId: string; description: string | null; requirements: string | null; notes: string | null;
   accountManagerId: string | null; status: string; priority: string; color: string; startDate: string | null; targetDate: string | null;
+  kind?: "STANDARD" | "SOCIAL_MEDIA"; postCount?: number | null;
 };
 
 const day = (d: string | null | undefined) => (d ? d.slice(0, 10) : "");
@@ -22,7 +23,7 @@ export function ProjectFormModal({ open, onClose, onSaved, project, defaultClien
   const [clients, setClients] = useState<{ id: string; name: string }[]>([]);
   const [ams, setAms] = useState<Person[]>([]);
   const [busy, setBusy] = useState(false);
-  const empty: ProjectInput = { name: "", clientId: defaultClientId ?? "", description: "", requirements: "", notes: "", accountManagerId: isAdmin ? "" : user.id, status: "PLANNING", priority: "MEDIUM", color: "#8b5cf6", startDate: "", targetDate: "" };
+  const empty: ProjectInput = { name: "", clientId: defaultClientId ?? "", description: "", requirements: "", notes: "", accountManagerId: isAdmin ? "" : user.id, status: "PLANNING", priority: "MEDIUM", color: "#8b5cf6", startDate: "", targetDate: "", kind: "STANDARD", postCount: 9 };
   const [f, setF] = useState<ProjectInput>(empty);
 
   useEffect(() => {
@@ -41,6 +42,7 @@ export function ProjectFormModal({ open, onClose, onSaved, project, defaultClien
     const body: Record<string, unknown> = {
       name: f.name, clientId: f.clientId, description: f.description || null, requirements: f.requirements || null, notes: f.notes || null,
       status: f.status, priority: f.priority, color: f.color, startDate: f.startDate || null, targetDate: f.targetDate || null,
+      kind: f.kind ?? "STANDARD", ...(f.kind === "SOCIAL_MEDIA" ? { postCount: Number(f.postCount) || null } : {}),
     };
     if (isAdmin) body.accountManagerId = f.accountManagerId || null;
     try {
@@ -62,6 +64,22 @@ export function ProjectFormModal({ open, onClose, onSaved, project, defaultClien
       footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="primary" type="submit" form="project-form" loading={busy}>{project?.id ? "Save" : "Create project"}</Button></>}>
       <form id="project-form" onSubmit={save} className="grid gap-4 md:grid-cols-2">
         <Field label="Project name" className="md:col-span-2"><Input required minLength={2} value={f.name} onChange={set("name")} placeholder="e.g. Ramadan Social Campaign" /></Field>
+        <Field label="Project type" className="md:col-span-2">
+          <div className="grid gap-2 sm:grid-cols-2">
+            {([["STANDARD", "Standard", "Tasks, steps and deadlines"], ["SOCIAL_MEDIA", "Social media", "Everything in Standard, plus a feed grid of posts the client can see"]] as const).map(([k, label, hint]) => (
+              <button key={k} type="button" onClick={() => setF((x) => ({ ...x, kind: k }))}
+                className={`rounded-xl border px-3 py-2.5 text-left transition ${(f.kind ?? "STANDARD") === k ? "border-[var(--accent)] bg-accent-soft" : "border-line hover:border-line-strong"}`}>
+                <div className="text-sm font-semibold text-fg">{label}</div>
+                <div className="text-[11px] text-muted">{hint}</div>
+              </button>
+            ))}
+          </div>
+        </Field>
+        {f.kind === "SOCIAL_MEDIA" && (
+          <Field label="How many posts?" hint="One square in the feed grid for each post. You can change this later.">
+            <Input type="number" required min={1} max={120} value={f.postCount ?? ""} onChange={(e) => setF((x) => ({ ...x, postCount: e.target.value === "" ? null : Number(e.target.value) }))} />
+          </Field>
+        )}
         <Field label="Client">
           <Select required value={f.clientId} onChange={set("clientId")} disabled={!!project?.id}>
             <option value="" disabled>Choose client</option>

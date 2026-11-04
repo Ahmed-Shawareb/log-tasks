@@ -12,6 +12,7 @@ import bcrypt from "bcryptjs";
 import { randomBytes } from "node:crypto";
 import { DEPARTMENTS } from "../src/lib/constants";
 import { TEMPLATES } from "../src/server/templates-data";
+import { TASK_TYPES } from "../src/server/task-types-data";
 import { addDays, startOfZonedDay, zonedParts, zonedToUtc } from "../src/lib/time";
 
 const db = new PrismaClient();
@@ -66,6 +67,9 @@ async function main() {
       console.log(`[seed] created ${p.email} (${p.role}) — no password yet; issue a reset link or run npm run create-admin`);
     }
   }
+
+  // Fixed task types
+  for (const [i, t] of TASK_TYPES.entries()) await db.taskType.upsert({ where: { name: t.name }, create: { ...t, sortOrder: i }, update: {} });
 
   // Templates
   for (const t of TEMPLATES) {

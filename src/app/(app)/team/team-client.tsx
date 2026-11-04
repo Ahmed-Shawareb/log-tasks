@@ -1,8 +1,8 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { DndContext, DragOverlay, PointerSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { DndContext, DragOverlay, PointerSensor, pointerWithin, rectIntersection, useDraggable, useDroppable, useSensor, useSensors, type CollisionDetection, type DragEndEvent } from "@dnd-kit/core";
 import { motion } from "motion/react";
-import { ChevronLeft, ChevronRight, Flag, Inbox, Plane, UserRoundPlus } from "lucide-react";
+import { ArrowLeftRight, ChevronLeft, ChevronRight, Flag, Plane } from "lucide-react";
 import { toast } from "sonner";
 import { DEPARTMENTS, PRIORITY_META, STATUS_META, type PriorityKey, type StatusKey } from "@/lib/constants";
 import { api, fmtTime, qs } from "@/lib/client";
@@ -11,18 +11,37 @@ import type { TaskItem } from "@/lib/types";
 import { useApp } from "@/components/app-context";
 import { ConflictDialog, isConflict, type ConflictState } from "@/components/tasks/dialogs";
 import { useProjects } from "@/components/tasks/pickers";
-import { Avatar, Badge, Button, Card, PageHeader, Progress, Segmented, Select, Skeleton } from "@/components/ui";
+import { Avatar, Button, Card, PageHeader, Progress, Segmented, Select, Skeleton } from "@/components/ui";
+import { IncomingCard, IncomingStrip, useIncoming, type Give } from "@/components/planner";
+import { DistributeDialog, type DistributableTask } from "@/components/tasks/distribute-dialog";
+import { stepColor } from "@/components/tasks/task-types";
 
 type Person = { id: string; name: string; avatarColor: string; title: string | null; role: string; workDays: number[]; workStartMin: number; workEndMin: number; weeklyCapacityMin: number; department: { key: string; name: string; color: string } | null };
 type Board = { start: string; days: number; people: Person[]; tasks: TaskItem[]; leaves: { id: string; userId: string; startsAt: string; endsAt: string; type: string; note: string | null }[]; unassigned: TaskItem[]; openCounts: Record<string, number> };
 
 const DAY_MS = 86_400_000;
+// Drop on the day under the pointer, not wherever the dragged card overlaps most.
+const dropUnderPointer: CollisionDetection = (args) => { const hits = pointerWithin(args); return hits.length ? hits : rectIntersection(args); };
 const isoDow = (d: Date) => ((d.getDay() + 6) % 7) + 1;
 const sameDay = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 
 function Chip({ task, kind, onOpen }: { task: TaskItem; kind: "block" | "deadline" | "floating"; onOpen: () => void }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `${kind}:${task.id}`, data: { task, kind } });
   const s = STATUS_META[task.status as StatusKey];
+  const step = task.stage !== null && task.stage !== undefined ? task.type?.stages?.[task.stage] : null;
+  if (step) {
+    const c = stepColor(step, task.stage ?? 0);
+    return (
+      <div ref={setNodeRef} {...attributes} {...listeners} onClick={onOpen}
+        className={cn("cursor-grab touch-none rounded-lg px-2 py-1 text-[11px] leading-tight transition hover:-translate-y-px hover:shadow-glow active:cursor-grabbing", isDragging && "opacity-30")}
+        style={{ background: `color-mix(in srgb, ${c} 22%, var(--panel-solid))`, borderLeft: `3px solid ${c}` }}
+        title={`${taskRef(task.number)} · ${task.title} · ${s.label}`}>
+        <div className="flex items-center gap-1 text-[10px] font-semibold" style={{ color: c }}>{step}{task.quantity ? <span className="text-muted">· {task.quantity}</span> : null}</div>
+        <div className={cn("truncate font-medium text-fg", isOverdue(task) && "text-red-300")}>{task.title.replace(/ · [^·]+ · /, " · ")}</div>
+        <div className="truncate text-[10px] text-muted">{s.label}</div>
+      </div>
+    );
+  }
   return (
     <div ref={setNodeRef} {...attributes} {...listeners} onClick={onOpen}
       className={cn("group cursor-grab touch-none rounded-lg border px-2 py-1 text-[11px] leading-tight transition hover:-translate-y-px hover:shadow-glow active:cursor-grabbing", isDragging && "opacity-30",
@@ -76,14 +95,20 @@ function PersonHeader({ p, open, booked }: { p: Person; open: number; booked: nu
 export function TeamClient() {
   const { openTask, dataVersion, invalidate, user } = useApp();
   const projects = useProjects();
-  const [days, setDays] = useState<"7" | "14">("7");
+  const [days, setDays] = useState<"7" | "14">("14");
+  // Flipped: days down the side, people across the top.
+  const [flip, setFlip] = useState(false);
+  useEffect(() => { try { setFlip(localStorage.getItem("log-planner-flip") === "1"); } catch {} }, []);
+  const toggleFlip = () => setFlip((f) => { try { localStorage.setItem("log-planner-flip", f ? "0" : "1"); } catch {} return !f; });
   const [start, setStart] = useState(() => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - d.getDay()); return d; });
   const [department, setDepartment] = useState(user.departmentKey && ["PERFORMANCE", "PRODUCTION"].includes(user.departmentKey) ? user.departmentKey : "");
   const [teamId, setTeamId] = useState("");
   const [projectId, setProjectId] = useState("");
   const [teams, setTeams] = useState<{ id: string; name: string }[]>([]);
   const [board, setBoard] = useState<Board | null>(null);
-  const [drag, setDrag] = useState<{ task: TaskItem; kind: string } | null>(null);
+  const [drag, setDrag] = useState<{ task: TaskItem; kind?: string; give?: Give } | null>(null);
+  const [give, setGive] = useState<{ task: DistributableTask; personId: string; stage: number | null; dueAt: string | null } | null>(null);
+  const incoming = useIncoming();
   const [conflict, setConflict] = useState<ConflictState | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
@@ -105,7 +130,7 @@ export function TeamClient() {
         if (t.scheduledStart && sameDay(new Date(t.scheduledStart), d)) {
           c.blocks.push(t);
           c.load += (new Date(t.scheduledEnd!).getTime() - new Date(t.scheduledStart).getTime()) / 60_000;
-        } else if (t.dueAt && sameDay(new Date(t.dueAt), d) && !["APPROVED", "CANCELLED"].includes(t.status)) c.deadlines.push(t);
+        } else if (!t.scheduledStart && t.dueAt && sameDay(new Date(t.dueAt), d) && !["APPROVED", "CANCELLED"].includes(t.status)) c.deadlines.push(t);
         m.set(key, c);
       });
     }
@@ -121,6 +146,7 @@ export function TeamClient() {
 
   async function place(task: TaskItem, personId: string, day: Date, kind: string) {
     const person = board!.people.find((p) => p.id === personId)!;
+    if (kind === "deadline") return moveDeadline(task, person, day);
     const prevStart = task.scheduledStart ? new Date(task.scheduledStart) : null;
     const duration = task.scheduledStart && task.scheduledEnd ? new Date(task.scheduledEnd).getTime() - new Date(task.scheduledStart).getTime() : (task.estimateMinutes || 120) * 60_000;
     const s = new Date(day);
@@ -135,6 +161,19 @@ export function TeamClient() {
       if (isConflict(err)) setConflict({ message: err.message, details: err.details, onPick: (slot) => schedulePick(task, personId, slot) });
       else toast.error(err instanceof Error ? err.message : "Could not move task");
     }
+  }
+  /** A task that only has a due day moves to the new day (and person) — it is not booked a second time. */
+  async function moveDeadline(task: TaskItem, person: Person, day: Date) {
+    const due = new Date(day);
+    const prev = task.dueAt ? new Date(task.dueAt) : null;
+    if (prev) due.setHours(prev.getHours(), prev.getMinutes(), 0, 0);
+    else due.setHours(Math.floor(person.workEndMin / 60), person.workEndMin % 60, 0, 0);
+    if (prev && +prev === +due && person.id === task.assigneeId) return;
+    try {
+      await api(`/api/tasks/${task.id}`, { method: "PATCH", body: { dueAt: due.toISOString(), version: task.version, ...(person.id !== task.assigneeId ? { assigneeId: person.id, handoffNote: "Moved on the team planner" } : {}) } });
+      toast.success(`${taskRef(task.number)} moved`, { description: `${person.id !== task.assigneeId ? `${person.name} · ` : ""}due ${due.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })}` });
+      invalidate();
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Could not move task"); }
   }
   async function schedulePick(task: TaskItem, personId: string, slot: { start: string; end: string }) {
     try {
@@ -155,11 +194,33 @@ export function TeamClient() {
     }
   }
 
+  /** A task or step from the slider dropped on a person (and maybe a day): ask how much, then split it. */
+  async function giveOut(g: Give, personId: string, day: Date | null) {
+    const t = g.task;
+    const person = board?.people.find((p) => p.id === personId);
+    let due: string | null = null;
+    if (day) { const d = new Date(day); const end = person?.workEndMin ?? 1080; d.setHours(Math.floor(end / 60), end % 60, 0, 0); due = d.toISOString(); }
+    if (!t.assigneeId) {
+      // Admin: a task nobody owns yet goes to that person as a whole.
+      try {
+        await api(`/api/tasks/${t.id}`, { method: "PATCH", body: { assigneeId: personId, version: t.version, handoffNote: "Sent from the team planner", ...(due && !t.dueAt ? { dueAt: due } : {}) } });
+        toast.success(`${taskRef(t.number)} sent to ${person?.name ?? "them"}`);
+        invalidate();
+      } catch (err) { toast.error(err instanceof Error ? err.message : "Could not assign"); }
+      return;
+    }
+    setGive({
+      task: { id: t.id, number: t.number, title: t.title, quantity: t.quantity, remaining: t.remaining ?? null, stageRemaining: t.stageRemaining ?? null, stage: t.stage, dueAt: t.dueAt, type: t.type },
+      personId, stage: g.stage, dueAt: due,
+    });
+  }
+
   function onDragEnd(e: DragEndEvent) {
     setDrag(null);
-    const data = e.active.data.current as { task: TaskItem; kind: string } | undefined;
+    const data = e.active.data.current as { task: TaskItem; kind: string; give?: Give } | undefined;
     if (!data || !e.over) return;
     const [a, b] = String(e.over.id).split("|");
+    if (data.give) return giveOut(data.give, a === "person" ? b! : a!, a === "person" ? null : dayList[Number(b)]!);
     if (a === "person") return handTo(data.task, b!);
     const dayIdx = Number(b);
     place(data.task, a!, dayList[dayIdx]!, data.kind);
@@ -170,8 +231,11 @@ export function TeamClient() {
 
   return (
     <div className="space-y-5">
-      <PageHeader eyebrow="Plan" title="Team schedule" subtitle="One lane per person. Drag work between days or people. Availability, leave and dependencies are checked on the server before anything moves."
-        actions={<Segmented options={[{ key: "7", label: "1 week" }, { key: "14", label: "2 weeks" }]} value={days} onChange={setDays} />} />
+      <PageHeader eyebrow="Plan" title="Team planner" subtitle="Drag a step from the slider onto a person's day to give it out. Every step has to come after the one before it."
+        actions={<>
+          <Button size="sm" onClick={toggleFlip} title="Swap rows and columns"><ArrowLeftRight className="h-4 w-4" /> {flip ? "People across" : "Days across"}</Button>
+          <Segmented options={[{ key: "7", label: "1 week" }, { key: "14", label: "2 weeks" }]} value={days} onChange={setDays} />
+        </>} />
 
       <div className="glass flex flex-wrap items-center gap-2 rounded-2xl p-2">
         <Button size="icon" variant="ghost" onClick={() => shift(-1)} aria-label="Previous"><ChevronLeft className="h-4 w-4" /></Button>
@@ -185,9 +249,45 @@ export function TeamClient() {
         </div>
       </div>
 
-      {!board ? <Skeleton className="h-[480px] w-full rounded-2xl" /> : (
-        <DndContext sensors={sensors} onDragStart={(e) => setDrag(e.active.data.current as { task: TaskItem; kind: string })} onDragEnd={onDragEnd} onDragCancel={() => setDrag(null)}>
-          <div className="grid gap-4 2xl:grid-cols-[1fr_280px]">
+      <DndContext sensors={sensors} collisionDetection={dropUnderPointer} onDragStart={(e) => { const d = e.active.data.current as { task?: TaskItem; kind?: string; give?: Give }; setDrag(d.give ? { task: d.give.task, give: d.give } : { task: d.task!, kind: d.kind }); }} onDragEnd={onDragEnd} onDragCancel={() => setDrag(null)}>
+        <IncomingStrip items={incoming} />
+        {!board ? <Skeleton className="h-[480px] w-full rounded-2xl" /> : flip ? (
+            <Card className="overflow-hidden">
+              <div className="overflow-x-auto">
+                <div className="min-w-max">
+                  <div className="flex border-b border-line">
+                    <div className="sticky left-0 z-10 w-28 shrink-0 border-r border-line bg-[color-mix(in_srgb,var(--panel-solid)_92%,transparent)] px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-muted">{board.people.length} people</div>
+                    {board.people.map((p) => (
+                      <div key={p.id} className="w-48 shrink-0 border-l border-line [&>div]:w-full [&>div]:border-r-0 [&>div]:static">
+                        <PersonHeader p={p} open={board.openCounts?.[p.id] ?? 0} booked={dayList.reduce((s, _d, i) => s + (cellData.get(`${p.id}|${i}`)?.load ?? 0), 0)} />
+                      </div>
+                    ))}
+                  </div>
+                  {dayList.map((d, i) => (
+                    <div key={i} className="flex border-b border-line last:border-b-0">
+                      <div className={cn("sticky left-0 z-10 flex w-28 shrink-0 flex-col justify-center border-r border-line bg-[color-mix(in_srgb,var(--panel-solid)_92%,transparent)] px-3 py-2", sameDay(d, today) && "bg-accent-soft/40")}>
+                        <div className="text-[10px] uppercase tracking-wider text-muted">{d.toLocaleDateString(undefined, { weekday: "short" })}</div>
+                        <div className={cn("font-display text-lg font-bold", sameDay(d, today) ? "text-accent-2" : "text-fg")}>{d.toLocaleDateString(undefined, { day: "numeric", month: "short" })}</div>
+                      </div>
+                      {board.people.map((p) => {
+                        const c = cellData.get(`${p.id}|${i}`);
+                        const off = !p.workDays.includes(isoDow(d));
+                        const lv = board.leaves.find((l) => l.userId === p.id && new Date(l.startsAt) < new Date(d.getTime() + DAY_MS) && new Date(l.endsAt) > d);
+                        return (
+                          <div key={p.id} className="w-48 shrink-0">
+                            <Cell id={`${p.id}|${i}`} off={off} leave={lv ? lv.type.toLowerCase() : undefined} load={c?.load ?? 0} cap={off ? 0 : p.workEndMin - p.workStartMin} today={sameDay(d, today)}>
+                              {c?.blocks.map((t) => <Chip key={t.id} task={t} kind="block" onOpen={() => openTask(t.id)} />)}
+                              {c?.deadlines.map((t) => <Chip key={t.id} task={t} kind="deadline" onOpen={() => openTask(t.id)} />)}
+                            </Cell>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </Card>
+        ) : (
             <Card className="overflow-hidden">
               <div className="overflow-x-auto">
                 <div className="min-w-max">
@@ -226,36 +326,17 @@ export function TeamClient() {
                 </div>
               </div>
             </Card>
-
-            <aside className="space-y-4">
-              <Card>
-                <div className="flex items-center gap-2 border-b border-line px-4 py-3"><UserRoundPlus className="h-4 w-4 text-accent-2" /><span className="text-sm font-semibold">Unassigned</span><Badge className="ml-auto" color="#a78bfa">{board.unassigned.length}</Badge></div>
-                <p className="px-4 pt-3 text-[11px] text-muted">Drop on a person’s day to assign and book, or on their name to assign only.</p>
-                <div className="max-h-[360px] space-y-1.5 overflow-y-auto p-3">
-                  {board.unassigned.map((t) => <Chip key={t.id} task={t} kind="floating" onOpen={() => openTask(t.id)} />)}
-                  {board.unassigned.length === 0 && <p className="py-4 text-center text-xs text-muted">Nothing waiting for an owner.</p>}
-                </div>
-              </Card>
-              <Card>
-                <div className="flex items-center gap-2 border-b border-line px-4 py-3"><Inbox className="h-4 w-4 text-accent-2" /><span className="text-sm font-semibold">Assigned, no date</span></div>
-                <div className="max-h-[360px] space-y-3 overflow-y-auto p-3">
-                  {[...floating.entries()].map(([pid, ts]) => {
-                    const p = board.people.find((x) => x.id === pid);
-                    return (
-                      <div key={pid}>
-                        <div className="mb-1 flex items-center gap-1.5 text-[11px] text-muted">{p && <Avatar name={p.name} color={p.avatarColor} size={16} />} {p?.name}</div>
-                        <div className="space-y-1.5">{ts.map((t) => <Chip key={t.id} task={t} kind="floating" onOpen={() => openTask(t.id)} />)}</div>
-                      </div>
-                    );
-                  })}
-                  {floating.size === 0 && <p className="py-4 text-center text-xs text-muted">Every assigned task has a date.</p>}
-                </div>
-              </Card>
-            </aside>
-          </div>
-          <DragOverlay>{drag && <div className="w-40 rotate-2"><Chip task={drag.task} kind={drag.kind as "block"} onOpen={() => {}} /></div>}</DragOverlay>
-        </DndContext>
-      )}
+        )}
+        <DragOverlay dropAnimation={{ duration: 180 }}>{drag && (drag.give
+          ? (drag.give.stage !== null
+            ? <div className="w-56 rotate-2 rounded-xl border border-line bg-panel-solid px-3 py-2 text-xs shadow-glow" style={{ borderLeft: `4px solid ${stepColor(drag.give.task.type?.stages?.[drag.give.stage], drag.give.stage)}` }}>
+                <div className="font-semibold text-fg">{drag.give.task.type?.stages?.[drag.give.stage]}</div>
+                <div className="truncate text-muted">{drag.give.task.title}</div>
+              </div>
+            : <IncomingCard task={drag.give.task} overlay />)
+          : <div className="w-40 rotate-2"><Chip task={drag.task} kind={drag.kind as "block"} onOpen={() => {}} /></div>)}</DragOverlay>
+      </DndContext>
+      <DistributeDialog task={give?.task ?? null} personId={give?.personId} stage={give?.stage} dueAt={give?.dueAt} open={!!give} onClose={() => setGive(null)} onDone={invalidate} />
       <ConflictDialog state={conflict} onClose={() => setConflict(null)} />
     </div>
   );

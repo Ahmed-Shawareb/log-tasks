@@ -3,7 +3,9 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { forbidden, invalid, notFound } from "../errors";
 import { audit, activity, notify } from "../audit";
-import { clientScope, isAccountManager, isAdmin, projectScope, taskScope, type SessionUser } from "../permissions";
+import { isWorkerRole } from "@/lib/constants";
+import { MAX_POSTS, syncPostSlots } from "./social";
+import { clientScope, isAccountManager, isAdmin, notPlan, projectScope, taskScope, type SessionUser } from "../permissions";
 
 const canEditClients = (u: SessionUser) => isAdmin(u) || isAccountManager(u);
 
@@ -55,7 +57,11 @@ export async function getClient(actor: SessionUser, id: string) {
     },
   });
   if (!c) throw notFound("Client");
-  return c;
+  // Only admins see (and manage) the client's dashboard login.
+  const portalLogin = isAdmin(actor)
+    ? await db.clientUser.findFirst({ where: { clientId: id }, select: { email: true, isActive: true, lastLoginAt: true } })
+    : null;
+  return { ...c, portalLogin };
 }
 
 export async function createClient(actor: SessionUser, raw: unknown) {
@@ -93,6 +99,9 @@ export const projectSchema = z.object({
   status: z.enum(["PLANNING", "ACTIVE", "ON_HOLD", "COMPLETED", "ARCHIVED"]).optional(),
   priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).optional(),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  kind: z.enum(["STANDARD", "SOCIAL_MEDIA"]).optional(),
+  /** Social media projects: how many posts the feed grid holds. */
+  postCount: z.number().int().min(1).max(MAX_POSTS).nullable().optional(),
   startDate: z.string().nullable().optional(),
   targetDate: z.string().nullable().optional(),
 });
@@ -118,7 +127,7 @@ export async function listProjects(actor: SessionUser, opts: { q?: string; statu
   // Progress is computed from the tasks this viewer can see.
   const stats = await db.task.groupBy({
     by: ["projectId", "status"],
-    where: { AND: [taskScope(actor), { archivedAt: null, projectId: { in: projects.map((p) => p.id) } }] },
+    where: { AND: [taskScope(actor), notPlan, { archivedAt: null, projectId: { in: projects.map((p) => p.id) } }] },
     _count: true,
   });
   return projects.map((p) => {
@@ -136,7 +145,7 @@ export async function getProject(actor: SessionUser, id: string) {
   });
   if (!p) throw notFound("Project");
   // Employees never see raw client contact info.
-  if (actor.role === "EMPLOYEE") {
+  if (isWorkerRole(actor.role)) {
     return { ...p, client: { ...p.client, contactEmail: null, contactPhone: null, contactName: null, notes: null }, notes: null };
   }
   return p;
@@ -151,8 +160,14 @@ export async function createProject(actor: SessionUser, raw: unknown) {
   await assertAccountManager(amId);
   const start = d(input.startDate), target = d(input.targetDate);
   if (start && target && target < start) throw invalid("Target date cannot be before the start date.");
-  const p = await db.project.create({
-    data: { ...input, accountManagerId: amId ?? null, startDate: start ?? null, targetDate: target ?? null },
+  if (input.kind === "SOCIAL_MEDIA" && !input.postCount) throw invalid("How many posts? A social media project needs the number of posts.");
+  const postCount = input.kind === "SOCIAL_MEDIA" ? input.postCount! : null;
+  const p = await db.$transaction(async (tx) => {
+    const created = await tx.project.create({
+      data: { ...input, postCount, accountManagerId: amId ?? null, startDate: start ?? null, targetDate: target ?? null },
+    });
+    if (postCount) await syncPostSlots(tx, created.id, postCount);
+    return created;
   });
   await activity(db, actor.id, "project.created", { projectId: p.id }, { name: p.name });
   if (amId) await notify(db, [amId], { type: "project.assigned", title: `New project: ${p.name}`, body: `${actor.name} made you account manager for ${client.name}.`, link: `/projects/${p.id}` }, actor.id);
@@ -169,9 +184,16 @@ export async function updateProject(actor: SessionUser, id: string, raw: unknown
     throw forbidden("Only administrators can change a project's account manager.");
   }
   await assertAccountManager(input.accountManagerId);
-  const p = await db.project.update({
-    where: { id },
-    data: { ...input, startDate: d(input.startDate), targetDate: d(input.targetDate) },
+  const kind = input.kind ?? before.kind;
+  const postCount = kind === "SOCIAL_MEDIA" ? (input.postCount ?? before.postCount) : before.postCount;
+  if (kind === "SOCIAL_MEDIA" && !postCount) throw invalid("How many posts? A social media project needs the number of posts.");
+  const p = await db.$transaction(async (tx) => {
+    const updated = await tx.project.update({
+      where: { id },
+      data: { ...input, postCount, startDate: d(input.startDate), targetDate: d(input.targetDate) },
+    });
+    if (kind === "SOCIAL_MEDIA") await syncPostSlots(tx, id, postCount!);
+    return updated;
   });
   if (input.accountManagerId && input.accountManagerId !== before.accountManagerId) {
     await notify(db, [input.accountManagerId], { type: "project.assigned", title: `You now manage ${p.name}`, link: `/projects/${p.id}` }, actor.id);

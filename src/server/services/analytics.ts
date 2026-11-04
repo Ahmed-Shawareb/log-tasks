@@ -3,7 +3,8 @@ import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { pct } from "@/lib/utils";
 import { addDays, companyTz, startOfZonedDay, zonedParts } from "@/lib/time";
-import { peopleScope, taskScope, type SessionUser } from "../permissions";
+import { notPlan, peopleScope, taskScope, type SessionUser } from "../permissions";
+import { DOER_ROLES } from "@/lib/constants";
 
 export type RangeKey = "today" | "7d" | "30d" | "90d" | "custom";
 
@@ -39,7 +40,7 @@ const dayKey = (d: Date) => {
  * - On-time rate: of tasks approved in the range that had a deadline, the share approved on or before it.
  */
 export async function dashboardData(actor: SessionUser, range: { start: Date; end: Date }) {
-  const scope: Prisma.TaskWhereInput = { AND: [taskScope(actor), { archivedAt: null }] };
+  const scope: Prisma.TaskWhereInput = { AND: [taskScope(actor), { archivedAt: null }, notPlan] };
   const now = new Date();
   const open = { status: { notIn: ["APPROVED", "CANCELLED"] as ("APPROVED" | "CANCELLED")[] } };
   const inRange = { gte: range.start, lt: range.end };
@@ -115,7 +116,7 @@ export async function dashboardData(actor: SessionUser, range: { start: Date; en
       select: { id: true, number: true, title: true, dueAt: true, priority: true, status: true, assignee: { select: { name: true, avatarColor: true } }, project: { select: { name: true, color: true } } },
     }),
     db.activity.findMany({
-      where: { task: scope }, orderBy: { createdAt: "desc" }, take: 14,
+      where: { task: { AND: [taskScope(actor), { archivedAt: null }] } }, orderBy: { createdAt: "desc" }, take: 14,
       include: { actor: { select: { name: true, avatarColor: true } }, task: { select: { number: true, title: true } } },
     }),
     db.task.groupBy({ by: ["projectId", "status"], where: { AND: [scope, { projectId: { not: null } }] }, _count: true }),
@@ -151,13 +152,14 @@ export async function dashboardData(actor: SessionUser, range: { start: Date; en
 export async function myWork(actor: SessionUser) {
   const now = new Date();
   const todayStart = startOfZonedDay(now), tomorrow = addDays(todayStart, 1);
-  const base = { assigneeId: actor.id, archivedAt: null };
+  const base = { assigneeId: actor.id, archivedAt: null, ...notPlan };
   const select = {
     id: true, number: true, title: true, dueAt: true, priority: true, status: true, scheduledStart: true, scheduledEnd: true,
     project: { select: { name: true, color: true } },
   } as const;
   const open = { notIn: ["APPROVED", "CANCELLED"] as ("APPROVED" | "CANCELLED")[] };
-  const [dueToday, upcoming, overdue, returned, inReview, recentlyDone, todaySchedule, minutesThisWeek] = await Promise.all([
+  const [openTasks, dueToday, upcoming, overdue, returned, inReview, recentlyDone, todaySchedule, minutesThisWeek] = await Promise.all([
+    db.task.findMany({ where: { ...base, status: { notIn: ["APPROVED", "CANCELLED", "SUBMITTED"] } }, select, orderBy: [{ dueAt: { sort: "asc", nulls: "last" } }, { priority: "desc" }], take: 20 }),
     db.task.findMany({ where: { ...base, status: open, dueAt: { gte: todayStart, lt: tomorrow } }, select, orderBy: { dueAt: "asc" } }),
     db.task.findMany({ where: { ...base, status: open, dueAt: { gte: tomorrow, lt: addDays(todayStart, 8) } }, select, orderBy: { dueAt: "asc" }, take: 10 }),
     db.task.findMany({ where: { ...base, status: open, dueAt: { lt: now } }, select, orderBy: { dueAt: "asc" } }),
@@ -167,17 +169,17 @@ export async function myWork(actor: SessionUser) {
     db.task.findMany({ where: { ...base, status: open, scheduledStart: { lt: tomorrow }, scheduledEnd: { gt: todayStart } }, select, orderBy: { scheduledStart: "asc" } }),
     db.timeEntry.aggregate({ where: { userId: actor.id, startedAt: { gte: addDays(todayStart, -6) } }, _sum: { minutes: true } }),
   ]);
-  return { dueToday, upcoming, overdue, returned, inReview, recentlyDone, todaySchedule, minutesThisWeek: minutesThisWeek._sum.minutes ?? 0 };
+  return { openTasks, dueToday, upcoming, overdue, returned, inReview, recentlyDone, todaySchedule, minutesThisWeek: minutesThisWeek._sum.minutes ?? 0 };
 }
 
 /** Per-person delivery performance for managers and the reports page. */
 export async function peoplePerformance(actor: SessionUser, range: { start: Date; end: Date }) {
   const people = await db.user.findMany({
-    where: { AND: [peopleScope(actor), { isActive: true, role: { in: ["EMPLOYEE", "PERFORMANCE_MANAGER", "PRODUCTION_MANAGER"] } }] },
+    where: { AND: [peopleScope(actor), { isActive: true, role: { in: [...DOER_ROLES] } }] },
     select: { id: true, name: true, avatarColor: true, title: true, department: { select: { name: true, key: true } } },
     orderBy: { name: "asc" },
   });
-  const scope = taskScope(actor);
+  const scope = { AND: [taskScope(actor), notPlan] };
   const out = [];
   for (const p of people) {
     const where = { AND: [scope, { assigneeId: p.id, archivedAt: null }] };
