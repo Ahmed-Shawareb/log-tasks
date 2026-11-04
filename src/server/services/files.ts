@@ -30,7 +30,7 @@ const supabase = () => {
 };
 const localRoot = () => path.join(process.cwd(), "storage", "uploads");
 
-async function putObject(key: string, bytes: Buffer, mime: string) {
+export async function putObject(key: string, bytes: Buffer, mime: string) {
   const sb = supabase();
   if (sb) {
     const res = await fetch(`${sb.url}/storage/v1/object/${sb.bucket}/${key}`, {
@@ -61,7 +61,7 @@ export async function getObject(key: string): Promise<Buffer> {
   return readFile(file).catch(() => { throw notFound("File"); });
 }
 
-async function deleteObject(key: string) {
+export async function deleteObject(key: string) {
   const sb = supabase();
   if (sb) {
     await fetch(`${sb.url}/storage/v1/object/${sb.bucket}`, {
@@ -74,11 +74,12 @@ async function deleteObject(key: string) {
 }
 
 /** Magic-byte sniffing for the types where a renamed executable could matter. */
-function sniffOk(mime: string, b: Buffer) {
+export function sniffOk(mime: string, b: Buffer) {
   const starts = (...sig: number[]) => sig.every((v, i) => b[i] === v);
   if (mime === "image/png") return starts(0x89, 0x50, 0x4e, 0x47);
   if (mime === "image/jpeg") return starts(0xff, 0xd8, 0xff);
   if (mime === "image/gif") return starts(0x47, 0x49, 0x46);
+  if (mime === "image/webp") return starts(0x52, 0x49, 0x46, 0x46) && b.subarray(8, 12).toString("ascii") === "WEBP";
   if (mime === "application/pdf") return starts(0x25, 0x50, 0x44, 0x46);
   if (mime.includes("zip") || mime.includes("openxmlformats")) return starts(0x50, 0x4b);
   if (b.length > 1 && starts(0x4d, 0x5a)) return false; // Windows executable

@@ -1,5 +1,5 @@
 import type { Prisma, Role } from "@prisma/client";
-import { MANAGER_DEPARTMENT } from "@/lib/constants";
+import { MANAGER_DEPARTMENT, isWorkerRole } from "@/lib/constants";
 
 export type SessionUser = {
   id: string;
@@ -13,10 +13,15 @@ export type SessionUser = {
   avatarColor: string;
 };
 
+/** Departments that work for every account manager (an Accounts employee works only for their own manager's team). */
+export const SHARED_DEPARTMENTS = ["PRODUCTION", "PERFORMANCE"];
+
 export const isAdmin = (u: SessionUser) => u.role === "ADMIN";
 export const isAccountManager = (u: SessionUser) => u.role === "ACCOUNT_MANAGER";
 export const isDeptManager = (u: SessionUser) => u.role === "PERFORMANCE_MANAGER" || u.role === "PRODUCTION_MANAGER";
 export const isManager = (u: SessionUser) => isAdmin(u) || isAccountManager(u) || isDeptManager(u);
+export const isWorker = (u: SessionUser) => isWorkerRole(u.role);
+export const isSocialSpecialist = (u: SessionUser) => u.role === "SOCIAL_MEDIA_SPECIALIST";
 export const managerDeptKey = (u: SessionUser) => MANAGER_DEPARTMENT[u.role] ?? null;
 
 /** Prisma filter for the tasks a user may see. Every task query must be AND-ed with this. */
@@ -24,17 +29,22 @@ export function taskScope(u: SessionUser): Prisma.TaskWhereInput {
   if (isAdmin(u)) return {};
   const mine: Prisma.TaskWhereInput[] = [{ assigneeId: u.id }, { creatorId: u.id }, { reviewerId: u.id }];
   if (isAccountManager(u)) {
-    return { OR: [...mine, { project: { accountManagerId: u.id } }] };
+    // Also the parts their managers split further (two levels down the chain they started).
+    const involved: Prisma.TaskWhereInput = { OR: [{ assigneeId: u.id }, { creatorId: u.id }] };
+    return { OR: [...mine, { project: { accountManagerId: u.id } }, { parent: involved }, { parent: { parent: involved } }] };
   }
   if (isDeptManager(u)) {
     return { OR: [...mine, { department: { key: managerDeptKey(u)! } }] };
   }
+  // The social media specialist also follows (read-only) the work of every social media project.
+  if (isSocialSpecialist(u)) return { OR: [{ assigneeId: u.id }, { creatorId: u.id }, { project: { kind: "SOCIAL_MEDIA" } }] };
   return { OR: [{ assigneeId: u.id }, { creatorId: u.id }] };
 }
 
 export function projectScope(u: SessionUser): Prisma.ProjectWhereInput {
   if (isAdmin(u)) return {};
   if (isAccountManager(u)) return { accountManagerId: u.id };
+  if (isSocialSpecialist(u)) return { OR: [{ kind: "SOCIAL_MEDIA" }, { tasks: { some: { AND: [{ assigneeId: u.id }, { archivedAt: null }] } } }] };
   // Managers / employees see projects they have visible work in.
   return { tasks: { some: { AND: [taskScope(u), { archivedAt: null }] } } };
 }
@@ -46,14 +56,24 @@ export function clientScope(u: SessionUser): Prisma.ClientWhereInput {
   return { id: "__none__" }; // employees never browse client records
 }
 
+/**
+ * A staged order ("30 Videos Social Media") is the plan the account manager splits into steps; it is not work by
+ * itself, so it is left out of work lists, calendars and counts. Its steps (the parts) are the work.
+ */
+export const notPlan: Prisma.TaskWhereInput = { NOT: { stage: null, parentId: null, quantity: { not: null }, type: { stages: { isEmpty: false } } } };
+
 /** Users whose schedules / workload this user may inspect. */
 export function peopleScope(u: SessionUser): Prisma.UserWhereInput {
   if (isAdmin(u)) return {};
   if (isAccountManager(u)) {
+    // Their own team, plus the shared Production / Performance departments every account manager books.
     return {
       OR: [
         { id: u.id },
-        { role: { in: ["PERFORMANCE_MANAGER", "PRODUCTION_MANAGER", "EMPLOYEE"] } },
+        { role: { in: ["PERFORMANCE_MANAGER", "PRODUCTION_MANAGER"] } },
+        { role: "EMPLOYEE", department: { key: { in: SHARED_DEPARTMENTS } } },
+        { role: { in: ["SOCIAL_MEDIA_SPECIALIST", "EXTERNAL"] } },
+        { memberships: { some: { team: { managerId: u.id } } } },
       ],
     };
   }

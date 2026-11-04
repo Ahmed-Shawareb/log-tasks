@@ -9,7 +9,7 @@ export type Jsonify<T> = T extends Date
       ? { [K in keyof T]: Jsonify<T[K]> }
       : T;
 
-export type TaskItem = Jsonify<TaskListItem>;
+export type TaskItem = Jsonify<TaskListItem> & { remaining?: number | null; stageRemaining?: number[] | null };
 export type TaskFull = Jsonify<TaskDetail>;
 
 export type Person = {

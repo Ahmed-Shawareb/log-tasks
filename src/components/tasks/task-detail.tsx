@@ -4,7 +4,7 @@ import Link from "next/link";
 import { AnimatePresence, motion } from "motion/react";
 import {
   Archive, ArrowRightLeft, Ban, CalendarClock, CheckCircle2, Clock, Copy, Download, ExternalLink, FileText, GitBranch, History,
-  Link2, MessageSquare, MoreHorizontal, Paperclip, Pause, Pencil, Play, Plus, RotateCcw, Send, Square, Timer, Trash2, Upload, X,
+  Link2, MessageSquare, MoreHorizontal, Paperclip, Split, Pencil, Play, Plus, RotateCcw, Send, Trash2, Upload, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { STATUS_META, type StatusKey } from "@/lib/constants";
@@ -16,6 +16,8 @@ import { Avatar, Badge, Button, ConfirmDialog, Drawer, EmptyState, Input, Overdu
 import { useApp } from "../app-context";
 import { ReasonDialog, ReassignDialog, ReviewDialog, ScheduleDialog, SubmitDialog } from "./dialogs";
 import { EditTaskModal } from "./task-form";
+import { DistributeDialog } from "./distribute-dialog";
+import { TypeIcon, qtyLabel, stepColor } from "./task-types";
 
 const ACTIVITY_LABEL: Record<string, string> = {
   "task.created": "created the task", "task.reassigned": "handed off the task", "task.status": "changed status", "task.due_changed": "changed the deadline",
@@ -51,8 +53,8 @@ export function TaskDetailView({ id, onClose, variant = "drawer" }: { id: string
   const { invalidate, dataVersion, openCreate, openTask } = useApp();
   const [task, setTask] = useState<TaskFull | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<"overview" | "submissions" | "comments" | "activity" | "time">("overview");
-  const [dialog, setDialog] = useState<null | "reassign" | "submit" | "review-approve" | "review-changes" | "schedule" | "edit" | "archive" | { status: StatusKey }>(null);
+  const [tab, setTab] = useState<"overview" | "submissions" | "comments" | "activity">("overview");
+  const [dialog, setDialog] = useState<null | "reassign" | "submit" | "review-approve" | "review-changes" | "schedule" | "edit" | "archive" | "distribute" | { status: StatusKey }>(null);
   const [menu, setMenu] = useState(false);
 
   const load = useCallback(async () => {
@@ -75,6 +77,7 @@ export function TaskDetailView({ id, onClose, variant = "drawer" }: { id: string
   );
 
   const p = task.perms;
+  const stepName = task.stage !== null ? task.type?.stages?.[task.stage] : null;
   const status = task.status as StatusKey;
   const moves = TRANSITIONS[status].filter((to) => canTransition(status, to, { canManage: p.canManage, isAssignee: p.isAssignee }));
   const doneChecklist = task.checklist.filter((c) => c.done).length;
@@ -90,14 +93,6 @@ export function TaskDetailView({ id, onClose, variant = "drawer" }: { id: string
     }
   };
   const requestStatus = (to: StatusKey) => (to === "BLOCKED" || to === "CANCELLED" || to === "ON_HOLD" ? setDialog({ status: to }) : changeStatus(to));
-  const timer = async () => {
-    try {
-      if (task.runningTimer) await api("/api/timer", { method: "DELETE" });
-      else await api(`/api/tasks/${task.id}/timer`, { method: "POST" });
-      toast.success(task.runningTimer ? "Timer stopped and time logged" : "Timer started");
-      refresh();
-    } catch (e) { toast.error(e instanceof Error ? e.message : "Timer failed"); }
-  };
 
   const latest = task.submissions[0];
   const mini = { id: task.id, number: task.number, title: task.title, version: task.version, assigneeId: task.assigneeId, department: task.department, scheduledStart: task.scheduledStart, scheduledEnd: task.scheduledEnd, estimateMinutes: task.estimateMinutes };
@@ -111,16 +106,23 @@ export function TaskDetailView({ id, onClose, variant = "drawer" }: { id: string
           {task.project && <><span>·</span><Link href={`/projects/${task.project.id}`} className="hover:text-fg">{task.project.client.name} / {task.project.name}</Link></>}
           <div className="ml-auto flex items-center gap-1">
             {variant === "drawer" && <Link href={`/tasks/${task.number}`} className="rounded-lg p-1.5 hover:bg-panel-hover" title="Open full page"><ExternalLink className="h-4 w-4" /></Link>}
-            {p.canManage && (
+            {(p.canManage || p.isAssignee) && (
               <div className="relative">
                 <button className="rounded-lg p-1.5 hover:bg-panel-hover" onClick={() => setMenu((m) => !m)} aria-label="More actions"><MoreHorizontal className="h-4 w-4" /></button>
                 <AnimatePresence>
                   {menu && (
                     <>
                       <div className="fixed inset-0 z-40" onClick={() => setMenu(false)} />
-                      <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="glass-strong absolute right-0 top-8 z-50 w-48 rounded-xl p-1 text-sm">
-                        <button className="flex w-full items-center gap-2 rounded-lg px-3 py-2 hover:bg-panel-hover" onClick={async () => { setMenu(false); try { const t = await api<{ id: string; number: number }>(`/api/tasks/${task.id}/duplicate`, { method: "POST" }); toast.success(`Duplicated as ${taskRef(t.number)}`); openTask(t.id); invalidate(); } catch (e) { toast.error(e instanceof Error ? e.message : "Failed"); } }}><Copy className="h-4 w-4" /> Duplicate</button>
-                        <button className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-red-300 hover:bg-red-500/10" onClick={() => { setMenu(false); setDialog("archive"); }}><Archive className="h-4 w-4" /> {task.archivedAt ? "Restore" : "Archive"}</button>
+                      <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="glass-strong absolute right-0 top-8 z-50 w-56 rounded-xl p-1 text-sm">
+                        {p.canManage && <button className="flex w-full items-center gap-2 rounded-lg px-3 py-2 hover:bg-panel-hover" onClick={() => { setMenu(false); setDialog("edit"); }}><Pencil className="h-4 w-4" /> Edit details</button>}
+                        {!["APPROVED", "CANCELLED"].includes(status) && <button className="flex w-full items-center gap-2 rounded-lg px-3 py-2 hover:bg-panel-hover" onClick={() => { setMenu(false); setDialog("schedule"); }}><CalendarClock className="h-4 w-4" /> {task.scheduledStart ? "Reschedule" : "Book time on calendar"}</button>}
+                        {moves.filter((m) => m !== "IN_PROGRESS" || !p.isAssignee).map((m) => (
+                          <button key={m} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 hover:bg-panel-hover" onClick={() => { setMenu(false); requestStatus(m); }}>
+                            <span className="h-2 w-2 rounded-full" style={{ background: STATUS_META[m].color }} /> Mark {STATUS_META[m].label.toLowerCase()}
+                          </button>
+                        ))}
+                        {p.canManage && <button className="flex w-full items-center gap-2 rounded-lg px-3 py-2 hover:bg-panel-hover" onClick={async () => { setMenu(false); try { const t = await api<{ id: string; number: number }>(`/api/tasks/${task.id}/duplicate`, { method: "POST" }); toast.success(`Duplicated as ${taskRef(t.number)}`); openTask(t.id); invalidate(); } catch (e) { toast.error(e instanceof Error ? e.message : "Failed"); } }}><Copy className="h-4 w-4" /> Duplicate</button>}
+                        {p.canManage && <button className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-red-300 hover:bg-red-500/10" onClick={() => { setMenu(false); setDialog("archive"); }}><Archive className="h-4 w-4" /> {task.archivedAt ? "Restore" : "Archive"}</button>}
                       </motion.div>
                     </>
                   )}
@@ -140,28 +142,20 @@ export function TaskDetailView({ id, onClose, variant = "drawer" }: { id: string
           {task.labels.map((l) => <Badge key={l} color="#a78bfa">#{l}</Badge>)}
         </div>
 
-        {/* Primary actions */}
+        {/* Only the actions that make sense right now; everything else lives in the ⋯ menu. */}
         <div className="mt-4 flex flex-wrap gap-2">
-          {p.isAssignee && canSubmit(status) && <Button variant="primary" size="sm" onClick={() => setDialog("submit")}><Send className="h-3.5 w-3.5" /> {task.submissions.length ? "Resubmit" : "Submit for review"}</Button>}
+          {p.canDistribute && (task.quantity === null || (task.remaining ?? 0) > 0) && (
+            <Button variant="primary" size="sm" onClick={() => setDialog("distribute")}><Split className="h-3.5 w-3.5" /> {task.quantity !== null ? "Give out to team" : "Give to someone"}</Button>
+          )}
+          {p.isAssignee && canSubmit(status) && <Button variant={p.canDistribute ? "secondary" : "primary"} size="sm" onClick={() => setDialog("submit")}><Send className="h-3.5 w-3.5" /> {task.submissions.length ? "Resubmit" : "Submit for review"}</Button>}
           {p.canReview && status === "SUBMITTED" && (
             <>
               <Button variant="success" size="sm" onClick={() => setDialog("review-approve")}><CheckCircle2 className="h-3.5 w-3.5" /> Approve</Button>
               <Button variant="secondary" size="sm" onClick={() => setDialog("review-changes")}><RotateCcw className="h-3.5 w-3.5" /> Request changes</Button>
             </>
           )}
-          {moves.includes("IN_PROGRESS") && <Button size="sm" onClick={() => changeStatus("IN_PROGRESS")}><Play className="h-3.5 w-3.5" /> {status === "SUBMITTED" ? "Withdraw" : status === "APPROVED" ? "Reopen" : "Start"}</Button>}
-          {p.canManage && <Button size="sm" onClick={() => setDialog("reassign")}><ArrowRightLeft className="h-3.5 w-3.5" /> Hand off</Button>}
-          {(p.canManage || p.isAssignee) && !["APPROVED", "CANCELLED"].includes(status) && <Button size="sm" onClick={() => setDialog("schedule")}><CalendarClock className="h-3.5 w-3.5" /> {task.scheduledStart ? "Reschedule" : "Schedule"}</Button>}
-          {p.isAssignee && !["APPROVED", "CANCELLED", "SUBMITTED"].includes(status) && (
-            <Button size="sm" variant={task.runningTimer ? "danger" : "secondary"} onClick={timer}>{task.runningTimer ? <><Square className="h-3.5 w-3.5" /> Stop timer</> : <><Timer className="h-3.5 w-3.5" /> Start timer</>}</Button>
-          )}
-          {p.canManage && <Button size="sm" variant="ghost" onClick={() => setDialog("edit")}><Pencil className="h-3.5 w-3.5" /> Edit</Button>}
-          {moves.filter((m) => m !== "IN_PROGRESS").length > 0 && (
-            <select aria-label="Move to status" className="h-8 rounded-xl border border-line bg-panel px-2 text-xs text-fg-2" value="" onChange={(e) => e.target.value && requestStatus(e.target.value as StatusKey)}>
-              <option value="">Move to…</option>
-              {moves.filter((m) => m !== "IN_PROGRESS").map((m) => <option key={m} value={m}>{STATUS_META[m].label}</option>)}
-            </select>
-          )}
+          {moves.includes("IN_PROGRESS") && p.isAssignee && <Button size="sm" onClick={() => changeStatus("IN_PROGRESS")}><Play className="h-3.5 w-3.5" /> {status === "SUBMITTED" ? "Withdraw" : status === "APPROVED" ? "Reopen" : "Start"}</Button>}
+          {p.canManage && <Button size="sm" variant="ghost" onClick={() => setDialog("reassign")}><ArrowRightLeft className="h-3.5 w-3.5" /> Hand off</Button>}
         </div>
       </div>
 
@@ -174,12 +168,36 @@ export function TaskDetailView({ id, onClose, variant = "drawer" }: { id: string
                 <Rich text={latest.review.feedback} />
               </motion.div>
             )}
+            {task.quantity !== null && (
+              <div className="rounded-2xl border border-line bg-panel p-4">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <div className="flex items-center gap-2 text-sm text-fg"><TypeIcon icon={task.type?.icon} className="h-4 w-4 text-accent-2" /> <span className="font-display text-2xl font-bold">{qtyLabel(task.type, task.quantity)}</span></div>
+                  {task.stageRemaining
+                    ? <span className="text-xs text-muted">Every unit goes through {task.stageRemaining.length} steps, in order</span>
+                    : <span className="text-xs text-muted">{qtyLabel(task.type, task.allocated)} given out · <strong className={cn(task.remaining ? "text-amber-300" : "text-emerald-300")}>{qtyLabel(task.type, task.remaining)} left</strong>{stepName ? <> · {stepName}</> : null}</span>}
+                </div>
+                {task.stageRemaining ? (
+                  <div className="mt-3 space-y-2">
+                    {task.stageRemaining.map((left, k) => {
+                      const name = task.type?.stages?.[k] ?? `Step ${k + 1}`, c = stepColor(name, k);
+                      return (
+                        <div key={k} className="flex items-center gap-3 text-xs">
+                          <span className="grid h-6 w-6 shrink-0 place-items-center rounded-lg text-[10px] font-bold text-white" style={{ background: c }}>{k + 1}</span>
+                          <span className="w-32 shrink-0 truncate font-medium text-fg">{name}</span>
+                          <Progress className="h-1.5 flex-1" value={((task.quantity! - left) / task.quantity!) * 100} color={c} />
+                          <span className="w-24 shrink-0 text-right tabular-nums text-muted">{left ? `${left} left` : "All given out"}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : <Progress className="mt-2" value={task.quantity ? (task.allocated / task.quantity) * 100 : 0} />}
+              </div>
+            )}
             <Tabs value={tab} onChange={setTab} tabs={[
               { key: "overview", label: "Overview" },
               { key: "submissions", label: "Submissions", count: task.submissions.length },
               { key: "comments", label: "Comments", count: task.comments.length },
               { key: "activity", label: "History" },
-              { key: "time", label: "Time", count: task.timeEntries.length },
             ]} />
             <AnimatePresence mode="wait">
               <motion.div key={tab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
@@ -187,7 +205,6 @@ export function TaskDetailView({ id, onClose, variant = "drawer" }: { id: string
                 {tab === "submissions" && <Submissions task={task} />}
                 {tab === "comments" && <Comments task={task} refresh={refresh} />}
                 {tab === "activity" && <ActivityTab task={task} />}
-                {tab === "time" && <TimeTab task={task} refresh={refresh} />}
               </motion.div>
             </AnimatePresence>
           </div>
@@ -200,9 +217,6 @@ export function TaskDetailView({ id, onClose, variant = "drawer" }: { id: string
               <MetaRow label="Created by">{task.creator.name}</MetaRow>
               <MetaRow label="Deadline"><span className={cn(overdue && "text-red-400")}>{fmtDateTime(task.dueAt)}</span></MetaRow>
               <MetaRow label="Scheduled">{task.scheduledStart ? <>{fmtDateTime(task.scheduledStart)}<br /><span className="text-xs text-muted">until {new Date(task.scheduledEnd!).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}</span></> : <span className="text-muted">Not scheduled</span>}</MetaRow>
-              <MetaRow label="Start">{fmtDate(task.startDate)}</MetaRow>
-              <MetaRow label="Effort">{formatMinutes(task.loggedMinutes)} <span className="text-muted">/ {task.estimateMinutes ? formatMinutes(task.estimateMinutes) : "no estimate"}</span></MetaRow>
-              {task.estimateMinutes ? <Progress value={(task.loggedMinutes / task.estimateMinutes) * 100} color={task.loggedMinutes > task.estimateMinutes ? "#ef4444" : undefined} className="mt-1" /> : null}
             </div>
             {task.parent && (
               <button onClick={() => openTask(task.parent!.id)} className="flex w-full items-center gap-2 rounded-2xl border border-line bg-panel p-3 text-left text-xs text-fg-2 hover:border-line-strong">
@@ -234,6 +248,7 @@ export function TaskDetailView({ id, onClose, variant = "drawer" }: { id: string
         </div>
       </div>
 
+      <DistributeDialog task={{ id: task.id, number: task.number, title: task.title, quantity: task.quantity, remaining: task.remaining, stageRemaining: task.stageRemaining, stage: task.stage, dueAt: task.dueAt, type: task.type }} open={dialog === "distribute"} onClose={() => setDialog(null)} onDone={refresh} />
       <ReassignDialog task={mini} open={dialog === "reassign"} onClose={() => setDialog(null)} onDone={refresh} />
       <SubmitDialog task={mini} open={dialog === "submit"} onClose={() => setDialog(null)} onDone={refresh} openChecklist={task.checklist.length - doneChecklist} />
       <ReviewDialog task={mini} open={dialog === "review-approve" || dialog === "review-changes"} initial={dialog === "review-changes" ? "CHANGES_REQUESTED" : "APPROVED"} onClose={() => setDialog(null)} onDone={refresh} />
@@ -478,43 +493,6 @@ function ActivityTab({ task }: { task: TaskFull }) {
       })}
       {task.activities.length === 0 && <li className="text-sm text-muted"><History className="mr-1 inline h-4 w-4" /> No history.</li>}
     </ol>
-  );
-}
-
-function TimeTab({ task, refresh }: { task: TaskFull; refresh: () => void }) {
-  const [hours, setHours] = useState("");
-  const [note, setNote] = useState("");
-  const can = task.perms.isAssignee || task.perms.canManage;
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3 rounded-2xl border border-line bg-panel p-4">
-        <Clock className="h-5 w-5 text-accent-2" />
-        <div className="text-sm"><span className="text-lg font-semibold text-fg">{formatMinutes(task.loggedMinutes)}</span> <span className="text-muted">logged{task.estimateMinutes ? ` of ${formatMinutes(task.estimateMinutes)} estimated` : ""}</span></div>
-      </div>
-      {can && (
-        <form className="flex flex-wrap gap-2" onSubmit={async (e) => {
-          e.preventDefault();
-          const minutes = Math.round(Number(hours) * 60);
-          if (!minutes) return;
-          try { await api(`/api/tasks/${task.id}/time`, { body: { minutes, note: note || undefined } }); setHours(""); setNote(""); toast.success("Time logged"); refresh(); } catch (err) { toast.error(err instanceof Error ? err.message : "Failed"); }
-        }}>
-          <Input type="number" min={0.25} step={0.25} max={16} value={hours} onChange={(e) => setHours(e.target.value)} placeholder="Hours" className="h-9 w-24" />
-          <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="What did you work on?" className="h-9 min-w-40 flex-1" />
-          <Button size="sm" type="submit"><Pause className="h-3.5 w-3.5" /> Log time</Button>
-        </form>
-      )}
-      <ul className="divide-y divide-[var(--line)] rounded-xl border border-line">
-        {task.timeEntries.map((t) => (
-          <li key={t.id} className="flex items-center gap-3 px-3 py-2 text-sm">
-            <Avatar name={t.user.name} color={t.user.avatarColor} size={22} />
-            <span className="flex-1 text-fg-2">{t.note ?? (t.endedAt ? "Time entry" : "Timer running…")}</span>
-            <span className="text-xs text-muted">{fmtDate(t.startedAt)}</span>
-            <span className="w-16 text-right font-mono text-xs text-fg">{t.endedAt ? formatMinutes(t.minutes) : "●"}</span>
-          </li>
-        ))}
-        {task.timeEntries.length === 0 && <li className="px-3 py-4 text-center text-xs text-muted">No time logged.</li>}
-      </ul>
-    </div>
   );
 }
 

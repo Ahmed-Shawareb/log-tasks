@@ -15,7 +15,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   try {
-    const result = await provisionProduction({ force: req.nextUrl.searchParams.get("force") === "1" });
+    // ?reset=1 deletes ALL data except the roster accounts; it also needs an explicit confirmation header.
+    const reset = req.nextUrl.searchParams.get("reset") === "1";
+    if (reset && req.headers.get("x-confirm") !== "delete-all-data") return NextResponse.json({ error: "Send X-Confirm: delete-all-data to reset." }, { status: 400 });
+    const result = await provisionProduction({ force: req.nextUrl.searchParams.get("force") === "1", reset });
     return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
     console.error("[setup] provisioning failed", e);

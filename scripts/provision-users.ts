@@ -13,6 +13,7 @@ import { randomBytes } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import { DEPARTMENTS } from "../src/lib/constants";
 import { ROSTER, TEAMS } from "../src/server/roster";
+import { TASK_TYPES } from "../src/server/task-types-data";
 
 const db = new PrismaClient({ datasourceUrl: process.env.DIRECT_URL || process.env.DATABASE_URL || process.env.POSTGRES_URL_NON_POOLING });
 
@@ -38,6 +39,8 @@ async function main() {
   const dept: Record<string, string> = {};
   for (const d of DEPARTMENTS) dept[d.key] = (await db.department.upsert({ where: { key: d.key }, create: { key: d.key, name: d.name, color: d.color }, update: {} })).id;
 
+  for (const [i, t] of TASK_TYPES.entries()) await db.taskType.upsert({ where: { name: t.name }, create: { ...t, sortOrder: i }, update: {} });
+
   const rows: { name: string; email: string; role: string; password: string }[] = [];
   const ids: Record<string, string> = {};
   for (const p of ROSTER) {
@@ -56,7 +59,7 @@ async function main() {
       create: { name: t.name, departmentId: dept[t.department]!, managerId: ids[t.managerEmail] },
       update: { managerId: ids[t.managerEmail], departmentId: dept[t.department]! },
     });
-    for (const p of ROSTER.filter((r) => r.department === t.department)) {
+    for (const p of ROSTER.filter((r) => t.members.includes(r.email))) {
       await db.teamMember.upsert({ where: { teamId_userId: { teamId: team.id, userId: ids[p.email]! } }, create: { teamId: team.id, userId: ids[p.email]! }, update: {} });
     }
   }
@@ -73,9 +76,10 @@ async function main() {
     ...rows.map((r) => `| ${r.name} | ${r.role} | ${r.email} | \`${r.password}\` |`),
     "",
   ].join("\n");
-  writeFileSync("CREDENTIALS.local.md", md);
+  const out = process.env.CREDENTIALS_FILE || "CREDENTIALS.local.md";
+  writeFileSync(out, md);
   console.log(`Provisioned ${rows.length} users and ${TEAMS.length} teams. Storage: ${bucket}`);
-  console.log("Passwords written to CREDENTIALS.local.md (git-ignored).");
+  console.log(`Passwords written to ${out} (git-ignored).`);
 }
 
 main().catch((e) => { console.error(e); process.exit(1); }).finally(() => db.$disconnect());

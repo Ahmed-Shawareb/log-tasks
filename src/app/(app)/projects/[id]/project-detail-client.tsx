@@ -9,9 +9,12 @@ import { isOverdue, taskRef } from "@/lib/utils";
 import type { TaskItem } from "@/lib/types";
 import { useApp } from "@/components/app-context";
 import { useFetch } from "@/components/forms";
+import { FeedPanel } from "@/components/feed-panel";
 import { Avatar, Badge, Button, Card, CardHeader, EmptyState, OverdueBadge, PageHeader, PriorityBadge, Progress, Select, Skeleton, StatusBadge } from "@/components/ui";
 import { ProjectFormModal, type ProjectInput } from "../project-form";
 import { PROJECT_STATUS_COLOR } from "../projects-client";
+
+const isPlan = (t: TaskItem) => t.stage === null && !t.parent && !!t.type?.stages?.length && t.quantity !== null;
 
 type Project = ProjectInput & {
   id: string; client: { id: string; name: string; contactName: string | null; contactEmail: string | null };
@@ -22,11 +25,12 @@ export function ProjectDetailClient({ id }: { id: string }) {
   const { user, openTask, openCreate, dataVersion, isManager } = useApp();
   const [editing, setEditing] = useState(false);
   const project = useFetch<Project>(`/api/projects/${id}`);
-  const tasks = useFetch<{ items: TaskItem[]; total: number }>(`/api/tasks?projectId=${id}&pageSize=300&sort=status`, [dataVersion]);
+  const tasks = useFetch<{ items: TaskItem[]; total: number }>(`/api/tasks?projectId=${id}&pageSize=300&sort=status&plans=1`, [dataVersion]);
   const canEdit = user.role === "ADMIN" || (user.role === "ACCOUNT_MANAGER" && project.data?.accountManagerId === user.id);
 
   const stats = useMemo(() => {
-    const items = tasks.data?.items ?? [];
+    // Orders ("30 videos") are split into steps; only the steps count as tasks.
+    const items = (tasks.data?.items ?? []).filter((t) => !isPlan(t));
     const live = items.filter((t) => t.status !== "CANCELLED");
     const done = live.filter((t) => t.status === "APPROVED").length;
     return {
@@ -82,9 +86,11 @@ export function ProjectDetailClient({ id }: { id: string }) {
         ))}
       </div>
 
+      {p.kind === "SOCIAL_MEDIA" && <FeedPanel projectId={p.id} projectName={p.name} postCount={p.postCount ?? null} />}
+
       <div className="grid gap-4 xl:grid-cols-3">
         <Card className="xl:col-span-2">
-          <CardHeader title="Tasks" subtitle={`${tasks.data?.total ?? 0} in this project`} icon={<ClipboardList className="h-4 w-4" />} />
+          <CardHeader title="Tasks" subtitle={`${stats.total} in this project`} icon={<ClipboardList className="h-4 w-4" />} />
           {!tasks.data && <div className="space-y-2 p-5">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-8" />)}</div>}
           {tasks.data && tasks.data.items.length === 0 && <EmptyState icon={<ClipboardList className="h-6 w-6" />} title="No tasks yet" body="Add the first task to break the project down." />}
           <ul className="divide-y divide-[var(--line)]">
@@ -93,7 +99,7 @@ export function ProjectDetailClient({ id }: { id: string }) {
                 <button onClick={() => openTask(t.id)} className="flex w-full items-center gap-3 px-5 py-2.5 text-left text-sm hover:bg-panel-hover">
                   <span className="w-16 shrink-0 font-mono text-[11px] text-muted">{taskRef(t.number)}</span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-fg">{t.parent ? <span className="text-muted">↳ </span> : null}{t.title}</span>
+                    <span className="block truncate text-fg">{t.parent ? <span className="text-muted">↳ </span> : null}{t.title}{isPlan(t) && <Badge color={t.type?.color ?? "#8b5cf6"} className="ml-2">Order{t.stageRemaining ? ` · ${t.stageRemaining.reduce((a, b) => a + b, 0)} steps left to give out` : ""}</Badge>}</span>
                     {t.department && <span className="text-[11px] text-muted">{t.department.name}</span>}
                   </span>
                   {isOverdue(t) && <OverdueBadge />}
@@ -108,7 +114,7 @@ export function ProjectDetailClient({ id }: { id: string }) {
         </Card>
         <div className="space-y-4">
           <Card>
-            <CardHeader title="Client" icon={<Building2 className="h-4 w-4" />} action={user.role !== "EMPLOYEE" && <Link href={`/clients/${p.client.id}`} className="text-xs text-accent-2 hover:underline">Open</Link>} />
+            <CardHeader title="Client" icon={<Building2 className="h-4 w-4" />} action={isManager && <Link href={`/clients/${p.client.id}`} className="text-xs text-accent-2 hover:underline">Open</Link>} />
             <div className="space-y-1 px-5 py-4 text-sm text-fg-2">
               <div className="font-medium text-fg">{p.client.name}</div>
               {p.client.contactName && <div>{p.client.contactName}</div>}
@@ -124,7 +130,7 @@ export function ProjectDetailClient({ id }: { id: string }) {
           <Card>
             <CardHeader title="Status breakdown" />
             <div className="flex flex-wrap gap-2 px-5 py-4">
-              {Object.entries((tasks.data?.items ?? []).reduce<Record<string, number>>((a, t) => ({ ...a, [t.status]: (a[t.status] ?? 0) + 1 }), {})).map(([s, n]) => (
+              {Object.entries((tasks.data?.items ?? []).filter((t) => !isPlan(t)).reduce<Record<string, number>>((a, t) => ({ ...a, [t.status]: (a[t.status] ?? 0) + 1 }), {})).map(([s, n]) => (
                 <Badge key={s} color={STATUS_META[s as StatusKey].color} dot>{STATUS_META[s as StatusKey].label} · {n}</Badge>
               ))}
             </div>

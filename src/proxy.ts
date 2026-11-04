@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 const SESSION_COOKIE = "log_session";
-const PUBLIC = ["/login", "/forgot-password", "/reset-password"];
+// /portal is the client dashboard: it has its own sign-in and checks its own cookie.
+const PUBLIC = ["/login", "/forgot-password", "/reset-password", "/portal"];
 
 // Optimistic gate only — real authentication & authorisation run on the server for every page and API call.
 export function proxy(request: NextRequest) {
@@ -15,5 +16,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|icon.svg|favicon.ico|robots.txt).*)"],
+  matcher: ["/((?!api|_next/static|_next/image|icon.svg|log-logo.png|log-mark.png|favicon.ico|robots.txt).*)"],
 };

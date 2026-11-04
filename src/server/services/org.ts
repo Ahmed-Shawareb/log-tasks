@@ -2,7 +2,7 @@ import "server-only";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
-import { MANAGER_DEPARTMENT } from "@/lib/constants";
+import { MANAGER_DEPARTMENT, ROLES, isWorkerRole } from "@/lib/constants";
 import { AppError, forbidden, invalid, notFound } from "../errors";
 import { audit } from "../audit";
 import { createResetToken, generatePassword, hashPassword, unusablePasswordHash } from "../auth";
@@ -37,18 +37,19 @@ export async function listPeople(actor: SessionUser, opts: { includeInactive?: b
   });
 }
 
-/** People `actor` may assign a task in `deptKey` to — powers every assignee picker. */
-export async function eligibleAssignees(actor: SessionUser, deptKey: string | null) {
+/**
+ * People `actor` may give work to — powers every assignee picker and the planner drop targets.
+ * Mirrors assertAssignable(): admin → everyone; AM → employees + Performance/Production managers;
+ * dept manager → their own department; employee → themselves.
+ */
+export async function eligibleAssignees(actor: SessionUser, _deptKey?: string | null) {
   if (!isManager(actor)) return db.user.findMany({ where: { id: actor.id }, select: publicUserSelect });
   const mgrDept = MANAGER_DEPARTMENT[actor.role];
-  const where: Prisma.UserWhereInput = { isActive: true };
-  const and: Prisma.UserWhereInput[] = [];
-  if (mgrDept) and.push({ department: { key: mgrDept } });
-  if (actor.role === "ACCOUNT_MANAGER") and.push({ role: { not: "ADMIN" } });
-  if (deptKey && deptKey !== "ACCOUNTS" && deptKey !== "MANAGEMENT") {
-    and.push({ OR: [{ department: { key: deptKey } }, { role: { in: ["ADMIN", "ACCOUNT_MANAGER"] } }] });
-  }
-  return db.user.findMany({ where: { ...where, AND: and }, select: publicUserSelect, orderBy: [{ role: "asc" }, { name: "asc" }] });
+  const scope: Prisma.UserWhereInput =
+    actor.role === "ADMIN" ? {}
+    : actor.role === "ACCOUNT_MANAGER" ? peopleScope(actor)
+    : { OR: [{ id: actor.id }, { department: { key: mgrDept! } }] };
+  return db.user.findMany({ where: { AND: [{ isActive: true }, scope] }, select: publicUserSelect, orderBy: [{ role: "asc" }, { name: "asc" }] });
 }
 
 const workSchema = {
@@ -61,7 +62,7 @@ const workSchema = {
 export const userSchema = z.object({
   name: z.string().trim().min(2).max(100),
   email: z.string().trim().toLowerCase().email().max(254),
-  role: z.enum(["ADMIN", "ACCOUNT_MANAGER", "PERFORMANCE_MANAGER", "PRODUCTION_MANAGER", "EMPLOYEE"]),
+  role: z.enum(ROLES),
   department: z.string().nullable().optional(),
   title: z.string().max(100).nullable().optional(),
   phone: z.string().max(40).nullable().optional(),
@@ -194,7 +195,7 @@ async function validateTeam(input: { department?: string; managerId?: string | n
   if (input.managerId) {
     const m = await db.user.findUnique({ where: { id: input.managerId }, include: { department: true } });
     if (!m?.isActive) throw invalid("Team manager must be an active user.");
-    if (m.role === "EMPLOYEE") throw invalid("An employee cannot be a team manager. Change their role first.");
+    if (isWorkerRole(m.role)) throw invalid(`${m.name} cannot be a team manager. Change their role first.`);
     const forced = MANAGER_DEPARTMENT[m.role];
     if (forced && forced !== deptKey) throw invalid(`${m.name} manages ${forced.toLowerCase()} and cannot lead a ${deptKey.toLowerCase()} team.`);
   }

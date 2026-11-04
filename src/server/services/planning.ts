@@ -5,7 +5,8 @@ import { db } from "@/lib/db";
 import { addDays, startOfZonedDay } from "@/lib/time";
 import { forbidden, invalid } from "../errors";
 import { audit } from "../audit";
-import { isAdmin, isManager, peopleScope, taskScope, type SessionUser } from "../permissions";
+import { isAdmin, isManager, notPlan, peopleScope, projectScope, taskScope, type SessionUser } from "../permissions";
+import { DOER_ROLES, isWorkerRole } from "@/lib/constants";
 import { taskListInclude, buildTaskWhere, type TaskFilters } from "./tasks";
 
 /** Calendar feed: scheduled blocks + deadlines + leave in [from, to). */
@@ -35,7 +36,9 @@ export async function workloadBoard(actor: SessionUser, opts: { start?: string; 
   const peopleWhere: Prisma.UserWhereInput = {
     AND: [
       peopleScope(actor),
-      { isActive: true, role: { in: ["EMPLOYEE", "PERFORMANCE_MANAGER", "PRODUCTION_MANAGER", ...(isAdmin(actor) ? ["ACCOUNT_MANAGER" as const] : [])] } },
+      { isActive: true },
+      // Doers, plus an account manager who is also a member of a team (e.g. a content creator in her own team).
+      { OR: [{ role: { in: [...DOER_ROLES] } }, { role: "ACCOUNT_MANAGER", memberships: { some: {} }, ...(isAdmin(actor) ? {} : { id: actor.id }) }] },
       opts.department ? { department: { key: opts.department } } : {},
       opts.teamId ? { memberships: { some: { teamId: opts.teamId } } } : {},
     ],
@@ -49,7 +52,7 @@ export async function workloadBoard(actor: SessionUser, opts: { start?: string; 
     orderBy: [{ department: { name: "asc" } }, { name: "asc" }],
   });
   const ids = people.map((p) => p.id);
-  const scope = { AND: [taskScope(actor), { archivedAt: null }, opts.projectId ? { projectId: opts.projectId } : {}] };
+  const scope = { AND: [taskScope(actor), { archivedAt: null }, notPlan, opts.projectId ? { projectId: opts.projectId } : {}] };
   const [tasks, leaves, unassigned] = await Promise.all([
     db.task.findMany({
       where: {
@@ -119,8 +122,8 @@ export async function globalSearch(actor: SessionUser, q: string) {
       where: { AND: [taskScope(actor), { archivedAt: null }, { OR: [{ title: { contains: term, mode: "insensitive" } }, ...(Number.isInteger(num) && num > 0 ? [{ number: num }] : [])] }] },
       select: { id: true, number: true, title: true, status: true, project: { select: { name: true } } }, take: 8, orderBy: { updatedAt: "desc" },
     }),
-    actor.role === "EMPLOYEE" ? Promise.resolve([]) : db.project.findMany({
-      where: { AND: [isAdmin(actor) ? {} : actor.role === "ACCOUNT_MANAGER" ? { accountManagerId: actor.id } : { tasks: { some: taskScope(actor) } }, { OR: [{ name: { contains: term, mode: "insensitive" } }, { client: { name: { contains: term, mode: "insensitive" } } }] }] },
+    isWorkerRole(actor.role) && actor.role !== "SOCIAL_MEDIA_SPECIALIST" ? Promise.resolve([]) : db.project.findMany({
+      where: { AND: [projectScope(actor), { OR: [{ name: { contains: term, mode: "insensitive" } }, { client: { name: { contains: term, mode: "insensitive" } } }] }] },
       select: { id: true, name: true, client: { select: { name: true } } }, take: 5,
     }),
     isManager(actor) ? db.user.findMany({ where: { AND: [peopleScope(actor), { isActive: true, name: { contains: term, mode: "insensitive" } }] }, select: { id: true, name: true, avatarColor: true, title: true }, take: 5 }) : Promise.resolve([]),

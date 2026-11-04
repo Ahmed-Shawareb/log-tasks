@@ -1,6 +1,7 @@
 import { execSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { db } from "@/lib/db";
+import { notPlan } from "@/server/permissions";
 import { createTask } from "@/server/services/tasks";
 import { createClient, createProject } from "@/server/services/clients";
 import { createTeam } from "@/server/services/org";
@@ -34,7 +35,8 @@ describe("data integrity", () => {
     const admin = await as(EMAILS.admin);
     const range = resolveRange("30d");
     const before = await dashboardData(admin, range);
-    expect(before.kpis.open).toBe(await db.task.count({ where: { archivedAt: null, status: { notIn: ["APPROVED", "CANCELLED"] } } }));
+    // Orders ("30 videos") are plans, not work: only their steps count.
+    expect(before.kpis.open).toBe(await db.task.count({ where: { AND: [notPlan, { archivedAt: null, status: { notIn: ["APPROVED", "CANCELLED"] } }] } }));
     await createTask(admin, { title: "Metric probe", dueAt: new Date(Date.now() - 3600_000).toISOString() });
     const after = await dashboardData(admin, range);
     expect(after.kpis.open).toBe(before.kpis.open + 1);

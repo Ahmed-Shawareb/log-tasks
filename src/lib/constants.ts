@@ -1,7 +1,13 @@
 // Shared (client + server) vocabulary. Keep labels here so every screen speaks the same language.
 
-export const ROLES = ["ADMIN", "ACCOUNT_MANAGER", "PERFORMANCE_MANAGER", "PRODUCTION_MANAGER", "EMPLOYEE"] as const;
+export const ROLES = ["ADMIN", "ACCOUNT_MANAGER", "PERFORMANCE_MANAGER", "PRODUCTION_MANAGER", "EMPLOYEE", "SOCIAL_MEDIA_SPECIALIST", "EXTERNAL"] as const;
 export type RoleKey = (typeof ROLES)[number];
+
+/** People who do the work and give none out (they never manage tasks). */
+export const WORKER_ROLES: readonly RoleKey[] = ["EMPLOYEE", "SOCIAL_MEDIA_SPECIALIST", "EXTERNAL"];
+/** Everyone a manager can hand work to. */
+export const DOER_ROLES: readonly RoleKey[] = [...WORKER_ROLES, "PERFORMANCE_MANAGER", "PRODUCTION_MANAGER"];
+export const isWorkerRole = (r: string) => (WORKER_ROLES as readonly string[]).includes(r);
 
 export const ROLE_LABEL: Record<RoleKey, string> = {
   ADMIN: "Administrator",
@@ -9,6 +15,8 @@ export const ROLE_LABEL: Record<RoleKey, string> = {
   PERFORMANCE_MANAGER: "Performance Manager",
   PRODUCTION_MANAGER: "Production Manager",
   EMPLOYEE: "Employee",
+  SOCIAL_MEDIA_SPECIALIST: "Social Media Specialist",
+  EXTERNAL: "External (outsourced)",
 };
 
 /** Department a manager role is restricted to. */

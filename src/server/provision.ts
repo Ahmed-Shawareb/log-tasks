@@ -6,6 +6,8 @@ import { DEPARTMENTS } from "@/lib/constants";
 import { hashPassword } from "./auth";
 import { ROSTER, TEAMS } from "./roster";
 import { TEMPLATES } from "./templates-data";
+import { TASK_TYPES } from "./task-types-data";
+import { wipeBusinessData } from "./wipe";
 
 const PROVISIONED_KEY = "provisionedAt";
 
@@ -27,13 +29,36 @@ async function ensureBucket() {
   return /already exists|Duplicate/i.test(text) ? `private bucket ${name} already exists` : `bucket error ${res.status}`;
 }
 
+/** Upserts the standard agency task types (keeps any admin edits to existing ones, unless `overwrite`). */
+export async function ensureTaskTypes(overwrite = false) {
+  for (const [i, t] of TASK_TYPES.entries()) {
+    await db.taskType.upsert({ where: { name: t.name }, create: { ...t, sortOrder: i }, update: overwrite ? { ...t, sortOrder: i, isActive: true } : {} });
+  }
+}
+
+/** Empties the private storage bucket (attachments and feed images of the data that was wiped). */
+async function emptyBucket() {
+  const url = process.env.SUPABASE_URL?.replace(/\/$/, ""), key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return "skipped (storage not configured)";
+  const name = process.env.SUPABASE_STORAGE_BUCKET || "log-attachments";
+  const res = await fetch(`${url}/storage/v1/bucket/${name}/empty`, { method: "POST", headers: { Authorization: `Bearer ${key}`, apikey: key } });
+  return res.ok ? `emptied bucket ${name}` : `could not empty bucket (${res.status})`;
+}
+
 /**
  * Production setup: reference data, private storage bucket, the real team with one-time passwords.
  * Runs once (guarded by a setting) unless `force` is set. Never creates test accounts.
  */
-export async function provisionProduction({ force = false } = {}) {
+export async function provisionProduction({ force = false, reset = false } = {}) {
   const done = await db.setting.findUnique({ where: { key: PROVISIONED_KEY } });
-  if (done && !force) return { alreadyProvisioned: true, at: done.value } as const;
+  if (done && !force && !reset) return { alreadyProvisioned: true, at: done.value } as const;
+
+  // Reset: start completely empty — only the roster's accounts are kept (with new passwords).
+  let removed: Record<string, number> | null = null, emptied: string | null = null;
+  if (reset) {
+    removed = await db.$transaction((tx) => wipeBusinessData(tx, ROSTER.map((r) => r.email), TASK_TYPES.map((t) => t.name)), { timeout: 120_000 });
+    emptied = await emptyBucket();
+  }
 
   const dept: Record<string, string> = {};
   for (const d of DEPARTMENTS) {
@@ -44,6 +69,8 @@ export async function provisionProduction({ force = false } = {}) {
     const data = { description: t.description, priority: t.priority, departmentId: t.department ? dept[t.department] : null, blueprint: { checklist: t.checklist, subtasks: t.subtasks } as Prisma.InputJsonValue };
     await db.taskTemplate.upsert({ where: { name: t.name }, create: { name: t.name, ...data }, update: {} });
   }
+
+  await ensureTaskTypes(reset);
 
   const credentials: { name: string; role: string; email: string; password: string }[] = [];
   const ids: Record<string, string> = {};
@@ -61,12 +88,12 @@ export async function provisionProduction({ force = false } = {}) {
       create: { name: t.name, departmentId: dept[t.department]!, managerId: ids[t.managerEmail] },
       update: { managerId: ids[t.managerEmail] },
     });
-    for (const p of ROSTER.filter((r) => r.department === t.department)) {
+    for (const p of ROSTER.filter((r) => t.members.includes(r.email))) {
       await db.teamMember.upsert({ where: { teamId_userId: { teamId: team.id, userId: ids[p.email]! } }, create: { teamId: team.id, userId: ids[p.email]! }, update: {} });
     }
   }
   const storage = await ensureBucket();
   await db.setting.upsert({ where: { key: PROVISIONED_KEY }, create: { key: PROVISIONED_KEY, value: new Date().toISOString() }, update: { value: new Date().toISOString() } });
-  await db.auditLog.create({ data: { action: "system.provisioned", entityType: "System", actorEmail: "setup", after: { users: ROSTER.map((r) => r.email), storage } } });
-  return { alreadyProvisioned: false, storage, credentials } as const;
+  await db.auditLog.create({ data: { action: reset ? "system.reset_to_roster" : "system.provisioned", entityType: "System", actorEmail: "setup", after: { users: ROSTER.map((r) => r.email), storage, removed, emptied } } });
+  return { alreadyProvisioned: false, storage, removed, emptied, credentials } as const;
 }

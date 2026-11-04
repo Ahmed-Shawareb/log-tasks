@@ -1,42 +1,65 @@
 "use client";
-import { useEffect, useState } from "react";
-import { LayoutTemplate, Sparkles } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { motion } from "motion/react";
+import { ChevronDown, Minus, PenSquare, Plus, Sparkles } from "lucide-react";
 import { toast } from "sonner";
-import { DEPARTMENTS, MANAGER_DEPARTMENT, PRIORITIES, PRIORITY_META } from "@/lib/constants";
+import { PRIORITIES, PRIORITY_META } from "@/lib/constants";
 import { api, fromLocalInput, toLocalInput } from "@/lib/client";
-import { taskRef } from "@/lib/utils";
+import { cn, taskRef } from "@/lib/utils";
 import type { TaskFull } from "@/lib/types";
 import { Button, Field, Input, Modal, Select, Textarea } from "../ui";
 import { useApp } from "../app-context";
-import { AssigneeSelect, useEligible, useProjects } from "./pickers";
+import { AssigneeSelect, useProjects } from "./pickers";
+import { TypeIcon, qtyLabel, useTaskTypes, type TaskTypeOpt } from "./task-types";
 
-type Template = { id: string; name: string; description: string | null; department: { key: string } | null; blueprint: { checklist?: string[]; subtasks?: { title: string }[] } };
+function QuantityStepper({ value, onChange, unit }: { value: number; onChange: (n: number) => void; unit: string }) {
+  return (
+    <div className="flex items-center gap-3">
+      <Button type="button" size="icon" onClick={() => onChange(Math.max(1, value - 1))} aria-label="Less"><Minus className="h-4 w-4" /></Button>
+      <Input type="number" min={1} max={100000} value={value} onChange={(e) => onChange(Math.max(1, Math.floor(Number(e.target.value) || 1)))}
+        className="h-12 w-28 text-center font-display text-2xl font-bold" aria-label={`How many ${unit}`} />
+      <Button type="button" size="icon" onClick={() => onChange(value + 1)} aria-label="More"><Plus className="h-4 w-4" /></Button>
+      <span className="text-sm text-muted">{unit}</span>
+    </div>
+  );
+}
 
+export function PrioritySegment({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="grid grid-cols-4 gap-1 rounded-xl border border-line bg-panel p-1" role="radiogroup" aria-label="Priority">
+      {PRIORITIES.map((p) => (
+        <button key={p} type="button" role="radio" aria-checked={value === p} onClick={() => onChange(p)}
+          className={cn("rounded-lg py-1.5 text-xs font-medium transition", value === p ? "text-white" : "text-muted hover:text-fg")}
+          style={value === p ? { background: PRIORITY_META[p].color } : undefined}>
+          {PRIORITY_META[p].label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const empty = { typeId: "", quantity: 10, title: "", description: "", projectId: "", assigneeId: "", priority: "MEDIUM", dueAt: "", startDate: "", checklist: "" };
+
+/** One form for everyone. Creates exactly one task; splitting it between people happens afterwards ("Split"). */
 export function TaskFormModal() {
   const { createDefaults, closeCreate, user, invalidate, openTask } = useApp();
   const open = createDefaults !== null;
-  const forcedDept = MANAGER_DEPARTMENT[user.role] ?? null;
+  const types = useTaskTypes();
   const projects = useProjects();
-  const [templates, setTemplates] = useState<Template[]>([]);
   const [busy, setBusy] = useState(false);
-  const [f, setF] = useState({
-    title: "", description: "", projectId: "", department: "", assigneeId: "", reviewerId: "", priority: "MEDIUM",
-    startDate: "", dueAt: "", estimate: "", labels: "", checklist: "", templateId: "", parentId: "",
-  });
-  const managers = useEligible(null).people.filter((p) => p.role !== "EMPLOYEE");
+  const [more, setMore] = useState(false);
+  const [f, setF] = useState(empty);
+  const type: TaskTypeOpt | undefined = useMemo(() => types.find((t) => t.id === f.typeId), [types, f.typeId]);
 
   useEffect(() => {
     if (!open) return;
-    setF({
-      title: createDefaults?.title ?? "", description: "", projectId: createDefaults?.projectId ?? "", department: createDefaults?.department ?? forcedDept ?? "",
-      assigneeId: createDefaults?.assigneeId ?? "", reviewerId: "", priority: "MEDIUM", startDate: "", dueAt: createDefaults?.dueAt ? toLocalInput(createDefaults.dueAt) : "",
-      estimate: "", labels: "", checklist: "", templateId: createDefaults?.templateId ?? "", parentId: createDefaults?.parentId ?? "",
-    });
-    api<Template[]>("/api/templates").then(setTemplates).catch(() => {});
-  }, [open, createDefaults, forcedDept]);
+    setMore(false);
+    setF({ ...empty, title: createDefaults?.title ?? "", projectId: createDefaults?.projectId ?? "", assigneeId: createDefaults?.assigneeId ?? "", dueAt: createDefaults?.dueAt ? toLocalInput(createDefaults.dueAt) : "" });
+  }, [open, createDefaults]);
 
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setF((x) => ({ ...x, [k]: e.target.value }));
-  const tpl = templates.find((t) => t.id === f.templateId);
+  const autoTitle = type ? (type.unit ? qtyLabel(type, f.quantity) : type.name) : "";
+  const isSubtask = !!createDefaults?.parentId;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,11 +67,10 @@ export function TaskFormModal() {
     try {
       const t = await api<{ id: string; number: number }>("/api/tasks", {
         body: {
-          title: f.title, description: f.description || null, projectId: f.projectId || null, parentId: f.parentId || null,
-          department: f.department || null, assigneeId: f.assigneeId || null, reviewerId: f.reviewerId || null, priority: f.priority,
-          startDate: fromLocalInput(f.startDate), dueAt: fromLocalInput(f.dueAt), estimateMinutes: f.estimate ? Math.round(Number(f.estimate) * 60) : null,
-          labels: f.labels.split(",").map((l) => l.trim()).filter(Boolean), checklist: f.checklist.split("\n").map((l) => l.trim()).filter(Boolean),
-          templateId: f.templateId || null,
+          typeId: f.typeId || null, quantity: type?.unit ? f.quantity : null, title: f.title || null,
+          description: f.description || null, projectId: f.projectId || null, parentId: createDefaults?.parentId || null,
+          assigneeId: f.assigneeId || null, priority: f.priority, dueAt: fromLocalInput(f.dueAt), startDate: fromLocalInput(f.startDate),
+          checklist: f.checklist.split("\n").map((l) => l.trim()).filter(Boolean),
         },
       });
       toast.success(`Created ${taskRef(t.number)}`, { action: { label: "Open", onClick: () => openTask(t.id) } });
@@ -62,56 +84,72 @@ export function TaskFormModal() {
   };
 
   return (
-    <Modal open={open} onClose={closeCreate} size="lg" title={<span className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-accent-2" /> {f.parentId ? "New subtask" : "New task"}</span>}
-      subtitle="Assignees are limited to active people allowed to take work in the chosen department."
+    <Modal open={open} onClose={closeCreate} size="lg"
+      title={<span className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-accent-2" /> {isSubtask ? "New subtask" : "New task"}</span>}
       footer={<><Button variant="ghost" onClick={closeCreate}>Cancel</Button><Button variant="primary" form="task-form" loading={busy} type="submit">Create task</Button></>}>
-      <form id="task-form" onSubmit={submit} className="grid gap-4 md:grid-cols-2">
-        {templates.length > 0 && !f.parentId && (
-          <Field label="Start from a template" className="md:col-span-2">
-            <div className="relative">
-              <LayoutTemplate className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-              <Select className="pl-9" value={f.templateId} onChange={(e) => {
-                const t = templates.find((x) => x.id === e.target.value);
-                setF((x) => ({ ...x, templateId: e.target.value, title: x.title || t?.name || "", department: forcedDept ?? (x.department || t?.department?.key || "") }));
-              }}>
-                <option value="">Blank task</option>
-                {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-              </Select>
+      <form id="task-form" onSubmit={submit} className="space-y-5">
+        {!isSubtask && (
+          <div>
+            <div className="mb-2 text-xs font-medium uppercase tracking-wider text-muted">What is needed?</div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {types.map((t, i) => (
+                <motion.button key={t.id} type="button" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.02 }}
+                  onClick={() => setF((x) => ({ ...x, typeId: x.typeId === t.id ? "" : t.id }))}
+                  className={cn("flex items-center gap-2 rounded-xl border px-3 py-2.5 text-left text-xs font-medium transition",
+                    f.typeId === t.id ? "border-transparent text-white shadow-glow" : "border-line bg-panel text-fg-2 hover:border-line-strong")}
+                  style={f.typeId === t.id ? { background: `linear-gradient(135deg, ${t.color}, color-mix(in srgb, ${t.color} 60%, #000))` } : undefined}>
+                  <TypeIcon icon={t.icon} className="h-4 w-4 shrink-0" />
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-semibold">{t.name}</span>
+                    {!!t.stages?.length && <span className={cn("block truncate text-[11px]", f.typeId === t.id ? "text-white/80" : "text-muted")}>{t.stages.join(" → ")}</span>}
+                  </span>
+                </motion.button>
+              ))}
+              <button type="button" onClick={() => setF((x) => ({ ...x, typeId: "" }))}
+                className={cn("flex items-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-medium transition", !f.typeId ? "border-accent/60 bg-accent-soft text-fg" : "border-dashed border-line-strong text-muted hover:text-fg")}>
+                <PenSquare className="h-4 w-4" /> Custom task
+              </button>
             </div>
-            {tpl && <span className="mt-1 block text-xs text-muted">Adds {tpl.blueprint.subtasks?.length ?? 0} subtasks and {tpl.blueprint.checklist?.length ?? 0} checklist items.</span>}
+          </div>
+        )}
+
+        {type?.unit && (
+          <Field label={`How many ${type.unitPlural}?`}>
+            <QuantityStepper value={f.quantity} onChange={(n) => setF((x) => ({ ...x, quantity: n }))} unit={type.unitPlural ?? ""} />
           </Field>
         )}
-        <Field label="Title" className="md:col-span-2"><Input required minLength={2} maxLength={200} value={f.title} onChange={set("title")} placeholder="e.g. Design 8 Ramadan feed posts" /></Field>
-        <Field label="Description & requirements" className="md:col-span-2"><Textarea value={f.description} onChange={set("description")} placeholder="Brief, context, acceptance criteria…" /></Field>
-        {!f.parentId && (
-          <Field label="Project">
-            <Select value={f.projectId} onChange={set("projectId")}>
-              <option value="">No project (internal)</option>
-              {projects.map((p) => <option key={p.id} value={p.id}>{p.client.name} · {p.name}</option>)}
-            </Select>
+
+        <Field label={type ? "Title (optional)" : "Title"}>
+          <Input required={!type} minLength={type ? 0 : 2} maxLength={200} value={f.title} onChange={set("title")} placeholder={autoTitle || "e.g. Launch campaign for Nile Bites"} />
+        </Field>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          {!isSubtask && projects.length > 0 && (
+            <Field label="Client / project">
+              <Select value={f.projectId} onChange={set("projectId")}>
+                <option value="">No project</option>
+                {projects.map((p) => <option key={p.id} value={p.id}>{p.client.name} · {p.name}</option>)}
+              </Select>
+            </Field>
+          )}
+          <Field label={user.role === "ADMIN" ? "Send to" : "Assign to"} hint={user.role === "ADMIN" ? "An account manager, a team manager, or straight to an employee." : undefined}>
+            <AssigneeSelect department={null} value={f.assigneeId} onChange={(v) => setF((x) => ({ ...x, assigneeId: v }))} allowNone />
           </Field>
+          <Field label="Deadline"><Input type="datetime-local" value={f.dueAt} onChange={set("dueAt")} /></Field>
+          <Field label="Priority"><PrioritySegment value={f.priority} onChange={(v) => setF((x) => ({ ...x, priority: v }))} /></Field>
+        </div>
+
+        <Field label="Notes for the team"><Textarea value={f.description} onChange={set("description")} placeholder="Brief, references, what the client expects…" className="min-h-[80px]" /></Field>
+
+        <button type="button" onClick={() => setMore((m) => !m)} className="inline-flex items-center gap-1 text-xs text-muted hover:text-fg">
+          <ChevronDown className={cn("h-3.5 w-3.5 transition", more && "rotate-180")} /> More options
+        </button>
+        {more && (
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="Start"><Input type="datetime-local" value={f.startDate} onChange={set("startDate")} /></Field>
+            <Field label="Checklist" hint="One item per line"><Textarea value={f.checklist} onChange={set("checklist")} className="min-h-[70px]" /></Field>
+          </div>
         )}
-        <Field label="Department">
-          <Select value={f.department} onChange={(e) => setF((x) => ({ ...x, department: e.target.value, assigneeId: "" }))} disabled={!!forcedDept}>
-            <option value="">— None —</option>
-            {DEPARTMENTS.map((d) => <option key={d.key} value={d.key}>{d.name}</option>)}
-          </Select>
-        </Field>
-        <Field label="Assignee"><AssigneeSelect department={f.department || null} value={f.assigneeId} onChange={(v) => setF((x) => ({ ...x, assigneeId: v }))} /></Field>
-        <Field label="Reviewer" hint="Defaults to you">
-          <Select value={f.reviewerId} onChange={set("reviewerId")}>
-            <option value="">Me ({user.name})</option>
-            {managers.filter((m) => m.id !== user.id).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-          </Select>
-        </Field>
-        <Field label="Priority">
-          <Select value={f.priority} onChange={set("priority")}>{PRIORITIES.map((p) => <option key={p} value={p}>{PRIORITY_META[p].label}</option>)}</Select>
-        </Field>
-        <Field label="Estimate (hours)"><Input type="number" min={0} step={0.25} value={f.estimate} onChange={set("estimate")} placeholder="2" /></Field>
-        <Field label="Start"><Input type="datetime-local" value={f.startDate} onChange={set("startDate")} /></Field>
-        <Field label="Deadline"><Input type="datetime-local" value={f.dueAt} onChange={set("dueAt")} /></Field>
-        <Field label="Labels" hint="Comma separated" className="md:col-span-2"><Input value={f.labels} onChange={set("labels")} placeholder="meta, design, urgent-client" /></Field>
-        <Field label="Checklist" hint="One item per line" className="md:col-span-2"><Textarea value={f.checklist} onChange={set("checklist")} placeholder={"Brief confirmed\nAssets received"} className="min-h-[70px]" /></Field>
       </form>
     </Modal>
   );
@@ -119,17 +157,11 @@ export function TaskFormModal() {
 
 export function EditTaskModal({ task, open, onClose, onDone }: { task: TaskFull; open: boolean; onClose: () => void; onDone: () => void }) {
   const projects = useProjects();
-  const { user } = useApp();
-  const forcedDept = MANAGER_DEPARTMENT[user.role] ?? null;
-  const managers = useEligible(null).people.filter((p) => p.role !== "EMPLOYEE");
   const [busy, setBusy] = useState(false);
-  const [f, setF] = useState({ title: "", description: "", projectId: "", department: "", reviewerId: "", priority: "MEDIUM", startDate: "", dueAt: "", estimate: "", labels: "" });
+  const [f, setF] = useState({ title: "", description: "", projectId: "", priority: "MEDIUM", dueAt: "", quantity: 1 });
   useEffect(() => {
     if (!open) return;
-    setF({
-      title: task.title, description: task.description ?? "", projectId: task.projectId ?? "", department: task.department?.key ?? "", reviewerId: task.reviewerId ?? "",
-      priority: task.priority, startDate: toLocalInput(task.startDate), dueAt: toLocalInput(task.dueAt), estimate: task.estimateMinutes ? String(task.estimateMinutes / 60) : "", labels: task.labels.join(", "),
-    });
+    setF({ title: task.title, description: task.description ?? "", projectId: task.projectId ?? "", priority: task.priority, dueAt: toLocalInput(task.dueAt), quantity: task.quantity ?? 1 });
   }, [open, task]);
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setF((x) => ({ ...x, [k]: e.target.value }));
   const save = async (e: React.FormEvent) => {
@@ -139,9 +171,8 @@ export function EditTaskModal({ task, open, onClose, onDone }: { task: TaskFull;
       await api(`/api/tasks/${task.id}`, {
         method: "PATCH",
         body: {
-          version: task.version, title: f.title, description: f.description || null, projectId: f.projectId || null, department: f.department || null,
-          reviewerId: f.reviewerId || null, priority: f.priority, startDate: fromLocalInput(f.startDate), dueAt: fromLocalInput(f.dueAt),
-          estimateMinutes: f.estimate ? Math.round(Number(f.estimate) * 60) : null, labels: f.labels.split(",").map((l) => l.trim()).filter(Boolean),
+          version: task.version, title: f.title, description: f.description || null, projectId: f.projectId || null, priority: f.priority,
+          dueAt: fromLocalInput(f.dueAt), ...(task.quantity !== null ? { quantity: Number(f.quantity) } : {}),
         },
       });
       toast.success("Task updated");
@@ -158,30 +189,20 @@ export function EditTaskModal({ task, open, onClose, onDone }: { task: TaskFull;
       footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="primary" form="edit-task" type="submit" loading={busy}>Save changes</Button></>}>
       <form id="edit-task" onSubmit={save} className="grid gap-4 md:grid-cols-2">
         <Field label="Title" className="md:col-span-2"><Input required value={f.title} onChange={set("title")} /></Field>
-        <Field label="Description" className="md:col-span-2"><Textarea value={f.description} onChange={set("description")} className="min-h-[140px]" /></Field>
-        <Field label="Project">
+        {task.quantity !== null && task.type && (
+          <Field label={`Total ${task.type.unitPlural}`} hint={task.allocated ? `${task.allocated} already given out` : undefined}>
+            <QuantityStepper value={Number(f.quantity)} onChange={(n) => setF((x) => ({ ...x, quantity: n }))} unit={task.type.unitPlural ?? ""} />
+          </Field>
+        )}
+        <Field label="Deadline"><Input type="datetime-local" value={f.dueAt} onChange={set("dueAt")} /></Field>
+        <Field label="Priority"><PrioritySegment value={f.priority} onChange={(v) => setF((x) => ({ ...x, priority: v }))} /></Field>
+        <Field label="Client / project">
           <Select value={f.projectId} onChange={set("projectId")}>
             <option value="">No project</option>
             {projects.map((p) => <option key={p.id} value={p.id}>{p.client.name} · {p.name}</option>)}
           </Select>
         </Field>
-        <Field label="Department">
-          <Select value={f.department} onChange={set("department")} disabled={!!forcedDept}>
-            <option value="">— None —</option>
-            {DEPARTMENTS.map((d) => <option key={d.key} value={d.key}>{d.name}</option>)}
-          </Select>
-        </Field>
-        <Field label="Reviewer">
-          <Select value={f.reviewerId} onChange={set("reviewerId")}>
-            <option value="">Responsible managers</option>
-            {managers.filter((m) => m.id !== task.assigneeId).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-          </Select>
-        </Field>
-        <Field label="Priority"><Select value={f.priority} onChange={set("priority")}>{PRIORITIES.map((p) => <option key={p} value={p}>{PRIORITY_META[p].label}</option>)}</Select></Field>
-        <Field label="Start"><Input type="datetime-local" value={f.startDate} onChange={set("startDate")} /></Field>
-        <Field label="Deadline"><Input type="datetime-local" value={f.dueAt} onChange={set("dueAt")} /></Field>
-        <Field label="Estimate (hours)"><Input type="number" min={0} step={0.25} value={f.estimate} onChange={set("estimate")} /></Field>
-        <Field label="Labels"><Input value={f.labels} onChange={set("labels")} /></Field>
+        <Field label="Notes" className="md:col-span-2"><Textarea value={f.description} onChange={set("description")} className="min-h-[120px]" /></Field>
       </form>
     </Modal>
   );

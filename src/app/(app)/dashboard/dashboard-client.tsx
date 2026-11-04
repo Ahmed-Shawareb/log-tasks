@@ -26,7 +26,7 @@ type Data = {
   recentActivity: { id: string; action: string; createdAt: string; actor: { name: string; avatarColor: string } | null; task: { number: number; title: string } | null }[];
   projectProgress: { id: string; name: string; color: string; total: number; done: number; progress: number; client: { name: string }; targetDate: string | null }[];
 };
-type Mine = { dueToday: Mini[]; upcoming: Mini[]; overdue: Mini[]; returned: Mini[]; inReview: Mini[]; recentlyDone: Mini[]; todaySchedule: Mini[]; minutesThisWeek: number };
+type Mine = { openTasks: Mini[]; dueToday: Mini[]; upcoming: Mini[]; overdue: Mini[]; returned: Mini[]; inReview: Mini[]; recentlyDone: Mini[]; todaySchedule: Mini[]; minutesThisWeek: number };
 
 function CountUp({ value, suffix = "" }: { value: number | null; suffix?: string }) {
   const mv = useMotionValue(0);
@@ -123,13 +123,17 @@ export function DashboardClient({ data, mine, range, denied }: { data: Data; min
           <Kpi label="Awaiting review" value={mine.inReview.length} icon={Eye} tone="#f59e0b" />
           <Kpi label="Returned for changes" value={mine.returned.length} icon={RotateCcw} tone="#f97316" />
           <Kpi label="Overdue" value={mine.overdue.length} icon={Flame} tone="#ef4444" />
-          <Kpi label="Hours (7 days)" value={Math.round((mine.minutesThisWeek / 60) * 10) / 10} icon={Timer} tone="#10b981" help="Time you logged on tasks in the last 7 days." />
+          <Kpi label="Recently approved" value={mine.recentlyDone.length} icon={CheckCircle2} tone="#10b981" help="Your latest approved tasks (up to 6)." />
         </Stagger>
       )}
 
       {!isManager && (
         <div className="grid gap-4 lg:grid-cols-3">
           <Card className="lg:col-span-2">
+            <CardHeader title="My tasks" subtitle="Everything assigned to you that is still open" icon={<ListTodo className="h-4 w-4" />} action={<Link href="/board" className="text-xs text-accent-2 hover:underline">Open board</Link>} />
+            <List items={mine.openTasks} empty="No open tasks. New work assigned to you appears here." extra={(t) => <><StatusBadge status={t.status} /><span className="w-16 text-right text-[11px] text-muted">{t.dueAt ? fmtDate(t.dueAt) : "no date"}</span></>} />
+          </Card>
+          <Card>
             <CardHeader title="Today’s schedule" subtitle="Time blocks booked for you today" icon={<CalendarClock className="h-4 w-4" />} action={<Link href="/calendar" className="text-xs text-accent-2 hover:underline">Open calendar</Link>} />
             {mine.todaySchedule.length === 0 ? <p className="px-5 py-8 text-center text-xs text-muted">Nothing booked today. Pick tasks from your board.</p> : (
               <div className="space-y-2 p-4">

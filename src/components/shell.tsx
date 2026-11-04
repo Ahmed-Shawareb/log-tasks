@@ -3,9 +3,9 @@ import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
-import {
+import { LayoutGrid,
   BarChart3, Bell, Briefcase, Building2, CalendarDays, CalendarOff, ChevronsLeft, ClipboardList, Command, KanbanSquare,
-  LayoutDashboard, LayoutTemplate, LogOut, Menu, Moon, Plus, ScrollText, Settings, Sun, Timer, UserCog, Users, UsersRound, X,
+  LayoutDashboard, LogOut, Menu, Moon, Plus, ScrollText, Settings, Shapes, Sun, Timer, UserCog, Users, UsersRound, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { ROLE_LABEL } from "@/lib/constants";
@@ -22,20 +22,20 @@ const NAV: { section: string; items: NavItem[] }[] = [
     section: "Work",
     items: [
       { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-      { href: "/tasks", label: "Tasks", icon: ClipboardList },
+      { href: "/calendar", label: "Calendar & planner", icon: CalendarDays },
       { href: "/board", label: "Board", icon: KanbanSquare },
-      { href: "/calendar", label: "Calendar", icon: CalendarDays },
-      { href: "/team", label: "Team schedule", icon: UsersRound, roles: ["ADMIN", "ACCOUNT_MANAGER", "PERFORMANCE_MANAGER", "PRODUCTION_MANAGER"] },
+      { href: "/tasks", label: "All tasks", icon: ClipboardList, roles: ["ADMIN", "ACCOUNT_MANAGER", "PERFORMANCE_MANAGER", "PRODUCTION_MANAGER"] },
+      { href: "/team", label: "Team planner", icon: UsersRound, roles: ["ADMIN", "ACCOUNT_MANAGER", "PERFORMANCE_MANAGER", "PRODUCTION_MANAGER"] },
     ],
   },
   {
     section: "Agency",
     items: [
-      { href: "/projects", label: "Projects", icon: Briefcase },
-      { href: "/clients", label: "Clients", icon: Building2, roles: ["ADMIN", "ACCOUNT_MANAGER", "PERFORMANCE_MANAGER", "PRODUCTION_MANAGER"] },
+      { href: "/clients", label: "Clients", icon: Building2, roles: ["ADMIN", "ACCOUNT_MANAGER"] },
+      { href: "/projects", label: "Projects", icon: Briefcase, roles: ["ADMIN", "ACCOUNT_MANAGER", "SOCIAL_MEDIA_SPECIALIST"] },
+      { href: "/feeds", label: "Social feeds", icon: LayoutGrid, roles: ["ADMIN", "ACCOUNT_MANAGER", "SOCIAL_MEDIA_SPECIALIST"] },
       { href: "/reports", label: "Reports", icon: BarChart3, roles: ["ADMIN", "ACCOUNT_MANAGER", "PERFORMANCE_MANAGER", "PRODUCTION_MANAGER"] },
-      { href: "/availability", label: "Availability", icon: CalendarOff },
-      { href: "/templates", label: "Templates", icon: LayoutTemplate, roles: ["ADMIN", "ACCOUNT_MANAGER", "PERFORMANCE_MANAGER", "PRODUCTION_MANAGER"] },
+      { href: "/availability", label: "Leave & availability", icon: CalendarOff },
     ],
   },
   {
@@ -43,6 +43,7 @@ const NAV: { section: string; items: NavItem[] }[] = [
     items: [
       { href: "/admin/users", label: "Users", icon: UserCog, roles: ["ADMIN"] },
       { href: "/admin/teams", label: "Teams", icon: Users, roles: ["ADMIN"] },
+      { href: "/admin/task-types", label: "Task types", icon: Shapes, roles: ["ADMIN"] },
       { href: "/admin/audit", label: "Audit log", icon: ScrollText, roles: ["ADMIN"] },
     ],
   },
@@ -66,7 +67,7 @@ function Sidebar({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: (
   return (
     <nav className="flex h-full flex-col gap-6 overflow-y-auto px-3 py-5" aria-label="Main">
       <Link href="/dashboard" className={cn("px-2", collapsed && "px-0 text-center")} onClick={onNavigate}>
-        {collapsed ? <LogMark className="mx-auto" /> : <LogLogo />}
+        {collapsed ? <LogMark className="mx-auto block" /> : <LogLogo />}
       </Link>
       {NAV.map((s) => {
         const items = s.items.filter((i) => !i.roles || i.roles.includes(user.role));
@@ -164,26 +165,6 @@ function Notifications() {
   );
 }
 
-function RunningTimer() {
-  const { dataVersion, invalidate, openTask } = useApp();
-  const [timer, setTimer] = useState<{ startedAt: string; task: { id: string; number: number; title: string } } | null>(null);
-  const [, tick] = useState(0);
-  useEffect(() => { api<{ timer: typeof timer }>("/api/me").then((r) => setTimer(r.timer)).catch(() => {}); }, [dataVersion]);
-  useEffect(() => { const t = setInterval(() => tick((x) => x + 1), 1000); return () => clearInterval(t); }, []);
-  if (!timer) return null;
-  const s = Math.floor((Date.now() - new Date(timer.startedAt).getTime()) / 1000);
-  const hh = String(Math.floor(s / 3600)).padStart(2, "0"), mm = String(Math.floor((s % 3600) / 60)).padStart(2, "0"), ss = String(s % 60).padStart(2, "0");
-  return (
-    <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="hidden items-center gap-1 rounded-xl border border-emerald-500/30 bg-emerald-500/10 pl-3 text-xs text-emerald-300 md:flex">
-      <button onClick={() => openTask(timer.task.id)} className="flex items-center gap-2" title={timer.task.title}>
-        <Timer className="h-3.5 w-3.5 animate-pulse" /> <span className="font-mono tabular-nums">{hh}:{mm}:{ss}</span>
-        <span className="max-w-28 truncate text-emerald-200/80">{taskRef(timer.task.number)}</span>
-      </button>
-      <Button size="sm" variant="ghost" className="h-7 text-emerald-300" onClick={async () => { await api("/api/timer", { method: "DELETE" }); toast.success("Time logged"); invalidate(); }}>Stop</Button>
-    </motion.div>
-  );
-}
-
 export function Shell({ children }: { children: ReactNode }) {
   const { user, isManager, openCreate } = useApp();
   const router = useRouter();
@@ -245,7 +226,6 @@ export function Shell({ children }: { children: ReactNode }) {
               <kbd className="ml-auto hidden rounded-md border border-line px-1.5 text-[10px] md:inline">Ctrl K</kbd>
             </button>
             <div className="ml-auto flex items-center gap-1.5">
-              <RunningTimer />
               {isManager && (
                 <Button variant="primary" size="sm" className="h-9" onClick={() => openCreate()} title="New task (N)">
                   <Plus className="h-4 w-4" /> <span className="hidden sm:inline">New task</span>

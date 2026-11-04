@@ -98,6 +98,7 @@ export function LoginForm({ devAccounts }: { devAccounts: { role: string; email:
               <Link href="/forgot-password" className="text-accent-2 hover:underline">Forgot password?</Link>
             </div>
           </form>
+          <p className="mt-6 border-t border-line pt-4 text-center text-xs text-muted">Are you a client? <Link href="/portal/login" className="text-accent-2 hover:underline">Open your dashboard</Link></p>
 
           {devAccounts.length > 0 && (
             <div className="mt-8 rounded-2xl border border-dashed border-amber-500/40 bg-amber-500/5 p-4">

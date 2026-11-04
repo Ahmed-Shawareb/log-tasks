@@ -13,7 +13,7 @@ import { Avatar, Badge, Button, Card, ConfirmDialog, EmptyState, Field, Input, M
 type UserRow = Person & { phone: string | null; isTestAccount: boolean; lastLoginAt: string | null; memberships: { team: { id: string; name: string } }[] };
 type Team = { id: string; name: string; department: { key: string; name: string } };
 
-const ROLE_COLOR: Record<RoleKey, string> = { ADMIN: "#e11d48", ACCOUNT_MANAGER: "#8b5cf6", PERFORMANCE_MANAGER: "#06b6d4", PRODUCTION_MANAGER: "#f59e0b", EMPLOYEE: "#22c55e" };
+const ROLE_COLOR: Record<RoleKey, string> = { ADMIN: "#e11d48", ACCOUNT_MANAGER: "#8b5cf6", PERFORMANCE_MANAGER: "#06b6d4", PRODUCTION_MANAGER: "#f59e0b", EMPLOYEE: "#22c55e", SOCIAL_MEDIA_SPECIALIST: "#ec4899", EXTERNAL: "#94a3b8" };
 
 export function UsersClient() {
   const { user: me } = useApp();

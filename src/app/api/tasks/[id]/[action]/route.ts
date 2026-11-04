@@ -2,7 +2,7 @@ import { z } from "zod";
 import { route } from "@/server/api";
 import { notFound } from "@/server/errors";
 import {
-  addChecklistItem, addComment, addDependency, archiveTask, changeStatus, duplicateTask, logTime, removeDependency,
+  addChecklistItem, addComment, addDependency, archiveTask, changeStatus, distributeTask, duplicateTask, logTime, removeDependency,
   reviewTask, scheduleTask, startTimer, submitWork,
 } from "@/server/services/tasks";
 import { uploadAttachment } from "@/server/services/files";
@@ -15,6 +15,7 @@ export const POST = route<P>(async ({ req, user, params }) => {
   switch (action) {
     case "status": return changeStatus(user, id, await req.json());
     case "submit": return submitWork(user, id, await req.json());
+    case "distribute": return distributeTask(user, id, await req.json());
     case "review": return reviewTask(user, id, await req.json());
     case "schedule": return scheduleTask(user, id, await req.json());
     case "comments": return addComment(user, id, await req.json());
