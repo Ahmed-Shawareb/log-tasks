@@ -98,6 +98,11 @@ body {
   min-height: 100dvh;
 }
 
+/* Grid cells may shrink below their content (charts, long titles). Without this one wide child — a chart that measured
+   itself at desktop width — keeps the whole page wider than a phone and the browser zooms out. Low specificity on
+   purpose: an explicit min-w-* class still wins. */
+:where(.grid) > * { min-width: 0; }
+
 ::selection { background: var(--accent-soft); }
 
 *:focus-visible {

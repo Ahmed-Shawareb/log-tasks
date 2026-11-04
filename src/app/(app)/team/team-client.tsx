@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { DndContext, DragOverlay, PointerSensor, pointerWithin, rectIntersection, useDraggable, useDroppable, useSensor, useSensors, type CollisionDetection, type DragEndEvent } from "@dnd-kit/core";
+import { DndContext, DragOverlay, pointerWithin, rectIntersection, useDraggable, useDroppable, type CollisionDetection, type DragEndEvent } from "@dnd-kit/core";
 import { motion } from "motion/react";
 import { ArrowLeftRight, ChevronLeft, ChevronRight, Flag, Plane } from "lucide-react";
 import { toast } from "sonner";
@@ -13,6 +13,7 @@ import { ConflictDialog, isConflict, type ConflictState } from "@/components/tas
 import { useProjects } from "@/components/tasks/pickers";
 import { Avatar, Button, Card, PageHeader, Progress, Segmented, Select, Skeleton } from "@/components/ui";
 import { IncomingCard, IncomingStrip, useIncoming, type Give } from "@/components/planner";
+import { useDragSensors } from "@/components/drag-sensors";
 import { DistributeDialog, type DistributableTask } from "@/components/tasks/distribute-dialog";
 import { stepColor } from "@/components/tasks/task-types";
 
@@ -33,7 +34,7 @@ function Chip({ task, kind, onOpen }: { task: TaskItem; kind: "block" | "deadlin
     const c = stepColor(step, task.stage ?? 0);
     return (
       <div ref={setNodeRef} {...attributes} {...listeners} onClick={onOpen}
-        className={cn("cursor-grab touch-none rounded-lg px-2 py-1 text-[11px] leading-tight transition hover:-translate-y-px hover:shadow-glow active:cursor-grabbing", isDragging && "opacity-30")}
+        className={cn("cursor-grab touch-manipulation select-none rounded-lg px-2 py-1 text-[11px] leading-tight transition hover:-translate-y-px hover:shadow-glow active:cursor-grabbing", isDragging && "opacity-30")}
         style={{ background: `color-mix(in srgb, ${c} 22%, var(--panel-solid))`, borderLeft: `3px solid ${c}` }}
         title={`${taskRef(task.number)} · ${task.title} · ${s.label}`}>
         <div className="flex items-center gap-1 text-[10px] font-semibold" style={{ color: c }}>{step}{task.quantity ? <span className="text-muted">· {task.quantity}</span> : null}</div>
@@ -44,7 +45,7 @@ function Chip({ task, kind, onOpen }: { task: TaskItem; kind: "block" | "deadlin
   }
   return (
     <div ref={setNodeRef} {...attributes} {...listeners} onClick={onOpen}
-      className={cn("group cursor-grab touch-none rounded-lg border px-2 py-1 text-[11px] leading-tight transition hover:-translate-y-px hover:shadow-glow active:cursor-grabbing", isDragging && "opacity-30",
+      className={cn("group cursor-grab touch-manipulation select-none rounded-lg border px-2 py-1 text-[11px] leading-tight transition hover:-translate-y-px hover:shadow-glow active:cursor-grabbing", isDragging && "opacity-30",
         kind === "deadline" ? "border-dashed border-red-400/60 bg-red-500/5" : "border-transparent")}
       style={kind !== "deadline" ? { background: `color-mix(in srgb, ${s.color} 26%, var(--panel-solid))`, borderLeft: `3px solid ${PRIORITY_META[task.priority as PriorityKey].color}` } : undefined}
       title={`${taskRef(task.number)} · ${task.title} · ${s.label}`}>
@@ -110,7 +111,7 @@ export function TeamClient() {
   const [give, setGive] = useState<{ task: DistributableTask; personId: string; stage: number | null; dueAt: string | null } | null>(null);
   const incoming = useIncoming();
   const [conflict, setConflict] = useState<ConflictState | null>(null);
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const sensors = useDragSensors();
 
   useEffect(() => { api<{ id: string; name: string }[]>("/api/teams").then(setTeams).catch(() => {}); }, []);
   const load = useCallback(() => {

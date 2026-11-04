@@ -103,7 +103,32 @@ export function TaskListClient() {
       </AnimatePresence>
 
       <div className="glass overflow-hidden rounded-2xl">
-        <div className="overflow-x-auto">
+        {/* Phones: one card per task instead of a wide table */}
+        <ul className="divide-y divide-[var(--line)] md:hidden">
+          {!data && Array.from({ length: 6 }).map((_, i) => <li key={i} className="p-4"><Skeleton className="h-12 w-full" /></li>)}
+          {data?.items.map((t) => (
+            <li key={t.id} className={cn("flex items-start gap-3 px-4 py-3", selected.has(t.id) && "bg-accent-soft/40")}>
+              {isManager && (
+                <input type="checkbox" aria-label={`Select ${taskRef(t.number)}`} className="mt-1 h-4 w-4 accent-violet-500" checked={selected.has(t.id)}
+                  onChange={() => setSelected((s) => { const n = new Set(s); n.has(t.id) ? n.delete(t.id) : n.add(t.id); return n; })} />
+              )}
+              <button type="button" onClick={() => openTask(t.id)} className="min-w-0 flex-1 text-left">
+                <div className="flex items-center gap-2 text-[11px] text-muted">
+                  <span className="font-mono">{taskRef(t.number)}</span>
+                  {t.project && <span className="inline-flex min-w-0 items-center gap-1 truncate"><span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: t.project.color }} />{t.project.name}</span>}
+                </div>
+                <div className="mt-0.5 line-clamp-2 text-sm font-medium text-fg">{t.title}</div>
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  <StatusBadge status={t.status} />
+                  <PriorityBadge priority={t.priority} compact />
+                  <span className={cn("text-xs", isOverdue(t) ? "text-red-400" : "text-fg-2")}>{t.dueAt ? `Due ${fmtDate(t.dueAt)}` : "No deadline"}</span>
+                </div>
+              </button>
+              {t.assignee && <Avatar name={t.assignee.name} color={t.assignee.avatarColor} size={26} />}
+            </li>
+          ))}
+        </ul>
+        <div className="hidden overflow-x-auto md:block">
           <table className="w-full min-w-[860px] text-sm">
             <thead className="border-b border-line">
               <tr>

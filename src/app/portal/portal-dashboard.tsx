@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
-import { CalendarDays, Check, CheckCircle2, ChevronLeft, ChevronRight, Clock, Download, ExternalLink, Eye, LayoutGrid, ListChecks, LogOut, Moon, Package, Play, Sun } from "lucide-react";
+import { CalendarDays, Check, CheckCircle2, ChevronLeft, ChevronRight, Clock, Download, ExternalLink, Eye, LayoutGrid, ListChecks, LogOut, Moon, Package, Play, Sparkles, Sun } from "lucide-react";
 import { toast } from "sonner";
 import { LogLogo } from "@/components/logo";
 import { Button, Card, Modal, Progress, Skeleton } from "@/components/ui";
@@ -71,8 +71,8 @@ export function PortalDashboard({ clientName, onboarded }: { clientName: string;
         <div className="flex items-center gap-1">
           <span className="mr-2 hidden items-center gap-1.5 text-[11px] text-muted sm:inline-flex"><span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" /> Live</span>
           <Button variant="ghost" size="icon" onClick={toggle} aria-label="Toggle theme">{theme === "dark" ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}</Button>
-          <a href="/portal?welcome=1"><Button variant="ghost" size="sm">Welcome tour</Button></a>
-          <Button variant="ghost" size="sm" onClick={logout}><LogOut className="h-4 w-4" /> Sign out</Button>
+          <a href="/portal?welcome=1" title="Welcome tour"><Button variant="ghost" size="sm" aria-label="Welcome tour"><Sparkles className="h-4 w-4" /><span className="hidden sm:inline">Welcome tour</span></Button></a>
+          <Button variant="ghost" size="sm" onClick={logout} aria-label="Sign out"><LogOut className="h-4 w-4" /><span className="hidden sm:inline">Sign out</span></Button>
         </div>
       </header>
 

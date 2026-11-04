@@ -42,7 +42,7 @@ function StepRow({ task, k, name }: { task: TaskItem; k: number; name: string })
   const done = (task.quantity ?? 0) - left;
   return (
     <div ref={setNodeRef} {...attributes} {...listeners}
-      className={cn("flex touch-none items-center gap-2 rounded-xl border border-line bg-panel px-2.5 py-2 transition", left ? "cursor-grab hover:-translate-y-px hover:border-line-strong hover:shadow-glow active:cursor-grabbing" : "opacity-50", isDragging && "opacity-30")}
+      className={cn("flex touch-manipulation select-none items-center gap-2 rounded-xl border border-line bg-panel px-2.5 py-2 transition", left ? "cursor-grab hover:-translate-y-px hover:border-line-strong hover:shadow-glow active:cursor-grabbing" : "opacity-50", isDragging && "opacity-30")}
       title={left ? `Drag onto a person's day to give out ${name.toLowerCase()}` : `${name}: everything given out`}>
       <span className="grid h-6 w-6 shrink-0 place-items-center rounded-lg text-[10px] font-bold text-white" style={{ background: c }}>{k + 1}</span>
       <div className="min-w-0 flex-1">
@@ -67,7 +67,7 @@ export function IncomingCard({ task, overlay, onOpen }: { task: TaskItem; overla
   return (
     <div {...drag}
       className={cn("group relative shrink-0 snap-start overflow-hidden rounded-2xl border border-line p-4 transition-all",
-        steps.length ? "w-80" : "w-64 cursor-grab touch-none active:cursor-grabbing hover:-translate-y-1 hover:shadow-glow",
+        steps.length ? "w-80" : "w-64 cursor-grab touch-manipulation select-none active:cursor-grabbing hover:-translate-y-1 hover:shadow-glow",
         "bg-[color-mix(in_srgb,var(--panel-solid)_85%,transparent)]", whole.isDragging && "opacity-30", overlay && "rotate-2 scale-105 shadow-glow")}>
       <div className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full opacity-30 blur-2xl transition-opacity group-hover:opacity-60" style={{ background: color }} />
       <button type="button" onClick={onOpen} className="relative flex w-full items-center gap-2 text-left">
