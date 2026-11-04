@@ -359,7 +359,7 @@ Create a **private** repository on GitHub and push to it. `.env`, `.pgdata/` and
 2. Call `POST https://<site>/api/setup/provision` with `Authorization: Bearer <SETUP_TOKEN>` (`?force=1` to re-issue passwords). It returns the one-time credentials once.
 3. Remove `SETUP_TOKEN` and redeploy. The endpoint then answers 404.
 
-To start production **completely empty except the roster's accounts** (deletes every task, client, project, feed and old account, empties the storage bucket, issues new one-time passwords): `POST /api/setup/provision?reset=1` with the same bearer token and the header `X-Confirm: delete-all-data`.
+To start production **completely empty except the roster's accounts** (deletes every task, client, project, feed and old account, empties the storage bucket, issues new one-time passwords): `POST /api/setup/provision?reset=1` with the same bearer token and the header `X-Confirm: delete-all-data`. Add `&shared=1` to give everyone the same first-sign-in password (each person must change it when they sign in).
 
 ### Production: first administrator
 

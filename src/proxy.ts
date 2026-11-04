@@ -12,7 +12,10 @@ export function proxy(request: NextRequest) {
   if (!hasSession && !PUBLIC.some((p) => pathname.startsWith(p))) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
-  return NextResponse.next();
+  // Lets server layouts know the page being opened (used to hold people on Settings until they change their password).
+  const headers = new Headers(request.headers);
+  headers.set("x-pathname", pathname);
+  return NextResponse.next({ request: { headers } });
 }
 
 export const config = {

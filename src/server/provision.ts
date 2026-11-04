@@ -49,7 +49,7 @@ async function emptyBucket() {
  * Production setup: reference data, private storage bucket, the real team with one-time passwords.
  * Runs once (guarded by a setting) unless `force` is set. Never creates test accounts.
  */
-export async function provisionProduction({ force = false, reset = false } = {}) {
+export async function provisionProduction({ force = false, reset = false, shared = false } = {}) {
   const done = await db.setting.findUnique({ where: { key: PROVISIONED_KEY } });
   if (done && !force && !reset) return { alreadyProvisioned: true, at: done.value } as const;
 
@@ -74,8 +74,10 @@ export async function provisionProduction({ force = false, reset = false } = {})
 
   const credentials: { name: string; role: string; email: string; password: string }[] = [];
   const ids: Record<string, string> = {};
+  // `shared`: one first-sign-in password for everyone; each person must pick their own right after signing in.
+  const sharedPassword = shared ? oneTimePassword() : null;
   for (const p of ROSTER) {
-    const password = oneTimePassword();
+    const password = sharedPassword ?? oneTimePassword();
     const data = { name: p.name, role: p.role, departmentId: dept[p.department], title: p.title, avatarColor: p.color, passwordHash: await hashPassword(password), mustChangePassword: true, isActive: true, isTestAccount: false };
     const u = await db.user.upsert({ where: { email: p.email }, create: { email: p.email, ...data }, update: data });
     await db.session.deleteMany({ where: { userId: u.id } });
