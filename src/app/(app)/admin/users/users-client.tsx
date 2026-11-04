@@ -50,7 +50,29 @@ export function UsersClient() {
         {!data && !error && <div className="space-y-2 p-5">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-10" />)}</div>}
         {data?.length === 0 && <EmptyState icon={<UserCog className="h-6 w-6" />} title="No users found" />}
         {data && data.length > 0 && (
-          <div className="overflow-x-auto">
+          <ul className="divide-y divide-[var(--line)] md:hidden">
+            {data.map((u) => (
+              <li key={u.id} className={cn("flex items-start gap-3 px-4 py-3", !u.isActive && "opacity-55")}>
+                <Avatar name={u.name} color={u.avatarColor} size={36} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-fg">{u.name}{!u.isActive && <Badge color="#94a3b8">inactive</Badge>}</div>
+                  <div className="truncate text-xs text-muted">{u.email}</div>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                    <Badge color={ROLE_COLOR[u.role as RoleKey]}>{ROLE_LABEL[u.role as RoleKey]}</Badge>
+                    <span className="text-[11px] text-muted">{u.lastLoginAt ? `Signed in ${relative(u.lastLoginAt)}` : "Never signed in"}</span>
+                  </div>
+                </div>
+                <div className="flex shrink-0 flex-col gap-1">
+                  <Button size="icon" variant="ghost" onClick={() => setEditing(u)} aria-label={`Edit ${u.name}`}><Pencil className="h-4 w-4" /></Button>
+                  <Button size="icon" variant="ghost" onClick={() => resetLink(u)} aria-label={`Reset link for ${u.name}`}><KeyRound className="h-4 w-4" /></Button>
+                  {u.id !== me.id && <Button size="icon" variant="ghost" onClick={() => setToggling(u)} aria-label={`${u.isActive ? "Deactivate" : "Activate"} ${u.name}`}><Power className={cn("h-4 w-4", u.isActive ? "text-red-400" : "text-emerald-400")} /></Button>}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        {data && data.length > 0 && (
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full min-w-[900px] text-sm">
               <thead className="border-b border-line text-[11px] uppercase tracking-wider text-muted">
                 <tr><th className="px-4 py-3 text-left">User</th><th className="px-3 text-left">Role</th><th className="px-3 text-left">Department / teams</th><th className="px-3 text-left">Schedule</th><th className="px-3 text-left">Last sign-in</th><th className="px-4 text-right">Actions</th></tr>

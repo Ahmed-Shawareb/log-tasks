@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { api, fmtDate } from "@/lib/client";
 import { cn } from "@/lib/utils";
 import { useFetch } from "./forms";
-import { Button, Card, CardHeader, Field, Input, Modal, Progress, Skeleton, Textarea } from "./ui";
+import { Button, Card, CardHeader, Field, Input, Modal, Progress, Select, Skeleton, Textarea } from "./ui";
 import { FeedGrid, KIND_LABEL, KindIcon, downloadGrid, imgUrl, type FeedPost } from "./feed-grid";
 
 type ApiPost = Omit<FeedPost, "media"> & { media: { id: string; position: number }[] };
@@ -44,12 +44,14 @@ export function FeedPanel({ projectId, projectName, postCount }: { projectId: st
             } : undefined} />
         )}
       </div>
-      <PostEditor projectId={projectId} post={current} canEdit={!!feed.data?.canEdit} onClose={() => setOpen(null)} onChanged={feed.reload} />
+      <PostEditor projectId={projectId} post={current} total={posts.length} others={posts} canEdit={!!feed.data?.canEdit} onClose={() => setOpen(null)} onChanged={feed.reload} />
     </Card>
   );
 }
 
-function PostEditor({ projectId, post, canEdit, onClose, onChanged }: { projectId: string; post: ApiPost | null; canEdit: boolean; onClose: () => void; onChanged: () => void }) {
+function PostEditor({ projectId, post, total, others, canEdit, onClose, onChanged }: {
+  projectId: string; post: ApiPost | null; total: number; others: FeedPost[]; canEdit: boolean; onClose: () => void; onChanged: () => void;
+}) {
   const [link, setLink] = useState("");
   const [driveLink, setDriveLink] = useState("");
   const [caption, setCaption] = useState("");
@@ -149,6 +151,18 @@ function PostEditor({ projectId, post, canEdit, onClose, onChanged }: { projectI
           )}
         </div>
         <div className="space-y-4">
+          {canEdit && total > 1 && (
+            <Field label="Position in the grid" hint="Swaps this post with the one at that position (on a computer you can also drag squares).">
+              <Select value={post.position} onChange={async (e) => {
+                const to = others.find((o) => o.position === Number(e.target.value));
+                if (!to || to.id === post.id) return;
+                try { await api(`/api/projects/${projectId}/posts/swap`, { body: { from: post.id, to: to.id } }); toast.success(`Moved to position ${to.position}`); onChanged(); onClose(); }
+                catch (err) { toast.error(err instanceof Error ? err.message : "Could not move the post"); }
+              }}>
+                {others.map((o) => <option key={o.id} value={o.position}>{o.position === post.position ? `${o.position} (here)` : `${o.position} · swap with ${KIND_LABEL[o.kind].toLowerCase()}${o.media.length ? "" : " (empty)"}`}</option>)}
+              </Select>
+            </Field>
+          )}
           <Field label="Type">
             <div className="grid grid-cols-3 gap-2">
               {KINDS.map((k) => (

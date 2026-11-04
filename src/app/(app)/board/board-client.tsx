@@ -1,9 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import {
-  DndContext, DragOverlay, KeyboardSensor, PointerSensor, useDraggable, useDroppable, useSensor, useSensors,
-  type DragEndEvent, type DragStartEvent,
-} from "@dnd-kit/core";
+import { DndContext, DragOverlay, useDraggable, useDroppable, type DragEndEvent, type DragStartEvent } from "@dnd-kit/core";
+import { useDragSensors } from "@/components/drag-sensors";
 import { AnimatePresence, motion } from "motion/react";
 import { Columns3, Eye, EyeOff, Plus, Rows3 } from "lucide-react";
 import { toast } from "sonner";
@@ -30,7 +28,7 @@ function sortTasks(a: TaskItem, b: TaskItem) {
 function DraggableCard({ task, onOpen }: { task: TaskItem; onOpen: () => void }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: task.id, data: { task } });
   return (
-    <div ref={setNodeRef} {...attributes} {...listeners} className={cn("touch-none", isDragging && "opacity-30")}>
+    <div ref={setNodeRef} {...attributes} {...listeners} className={cn("touch-manipulation select-none", isDragging && "opacity-30")}>
       <TaskCard task={task} onClick={onOpen} />
     </div>
   );
@@ -73,7 +71,7 @@ export function BoardClient() {
   const [review, setReview] = useState<{ task: TaskItem; decision: "APPROVED" | "CHANGES_REQUESTED" } | null>(null);
   const [reason, setReason] = useState<{ task: TaskItem; to: StatusKey } | null>(null);
   const [conflict, setConflict] = useState<ConflictState | null>(null);
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }), useSensor(KeyboardSensor));
+  const sensors = useDragSensors({ keyboard: true });
 
   useEffect(() => {
     const ctrl = new AbortController();
