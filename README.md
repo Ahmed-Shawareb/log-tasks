@@ -157,6 +157,8 @@ npm run reset-to-roster -- --yes
 | **Account Manager** | Their own projects (a client can have several account managers, one per project), tasks they created or own, and every part split from them (two levels down) | Their own team (they can be in it themselves, e.g. as content creator), Production/Performance people and managers |
 | **Performance / Production Manager** | Their department's tasks and anything they created | Only their own team |
 | **Employee** | Only tasks assigned to them (or subtasks they created) | Nobody — they do the work, submit it, and can record their own leave |
+| **Social Media Specialist** | Every social media project, its feed (Social feeds page: fill in links, swap posts, download grids) and its tasks, read-only | Nobody — works on the tasks given to them |
+| **External** (outsourced) | Only tasks assigned to them, exactly like an employee | Nobody |
 
 Employees never see clients, other people's tasks, reports or admin pages. Every rule is enforced on the server: a hidden button is never the protection.
 
@@ -356,6 +358,8 @@ Create a **private** repository on GitHub and push to it. `.env`, `.pgdata/` and
 1. Add a `SETUP_TOKEN` (32+ random characters) to the Production environment and redeploy.
 2. Call `POST https://<site>/api/setup/provision` with `Authorization: Bearer <SETUP_TOKEN>` (`?force=1` to re-issue passwords). It returns the one-time credentials once.
 3. Remove `SETUP_TOKEN` and redeploy. The endpoint then answers 404.
+
+To start production **completely empty except the roster's accounts** (deletes every task, client, project, feed and old account, empties the storage bucket, issues new one-time passwords): `POST /api/setup/provision?reset=1` with the same bearer token and the header `X-Confirm: delete-all-data`.
 
 ### Production: first administrator
 
