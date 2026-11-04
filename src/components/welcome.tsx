@@ -60,7 +60,7 @@ export function StaffWelcome() {
   return (
     <Onboarding slides={staffSlides(user.name, user.role)} onDone={async () => {
       await fetch("/api/me/onboarded", { method: "POST" }).catch(() => {});
-      setTimeout(() => setShow(false), 600);
+      setTimeout(() => setShow(false), 1000);
       const url = new URL(window.location.href);
       if (url.searchParams.has("welcome")) { url.searchParams.delete("welcome"); router.replace(url.pathname + url.search); }
       router.refresh();
@@ -76,7 +76,7 @@ export function ClientWelcome({ client, onboarded }: { client: string; onboarded
   return (
     <Onboarding slides={clientSlides(client)} finishLabel="Open my dashboard" onDone={async () => {
       await fetch("/api/portal/onboarded", { method: "POST" }).catch(() => {});
-      setTimeout(() => setShow(false), 600);
+      setTimeout(() => setShow(false), 1000);
     }} />
   );
 }
