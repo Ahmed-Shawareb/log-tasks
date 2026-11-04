@@ -5,5 +5,5 @@ export const metadata = { title: "Your dashboard" };
 
 export default async function PortalPage() {
   const u = await requirePortalPage();
-  return <PortalDashboard clientName={u.clientName} />;
+  return <PortalDashboard clientName={u.clientName} onboarded={u.onboarded} />;
 }

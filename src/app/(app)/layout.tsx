@@ -3,6 +3,7 @@ import { AppProvider } from "@/components/app-context";
 import { Shell } from "@/components/shell";
 import { TaskDrawerHost } from "@/components/tasks/task-detail";
 import { TaskFormModal } from "@/components/tasks/task-form";
+import { StaffWelcome } from "@/components/welcome";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { requirePageUser } from "@/server/session";
@@ -17,6 +18,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <Shell>{children}</Shell>
       <TaskDrawerHost />
       <TaskFormModal />
+      <StaffWelcome />
     </AppProvider>
   );
 }

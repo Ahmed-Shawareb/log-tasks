@@ -8,6 +8,7 @@ import { LogLogo } from "@/components/logo";
 import { Button, Card, Modal, Progress, Skeleton } from "@/components/ui";
 import { FeedGrid, KIND_LABEL, KindIcon, downloadGrid, imgUrl, type FeedPost } from "@/components/feed-grid";
 import { cn } from "@/lib/utils";
+import { ClientWelcome } from "@/components/welcome";
 
 type State = "done" | "review" | "in_progress" | "upcoming";
 type Item = { id: string; projectId: string; title: string; step: string | null; type: string | null; quantity: number | null; color: string; dueAt: string | null; completedAt: string | null; state: State; orderId: string | null };
@@ -37,7 +38,7 @@ function useTheme() {
   return { theme, toggle };
 }
 
-export function PortalDashboard({ clientName }: { clientName: string }) {
+export function PortalDashboard({ clientName, onboarded }: { clientName: string; onboarded: boolean }) {
   const router = useRouter();
   const { theme, toggle } = useTheme();
   const [data, setData] = useState<Overview | null>(null);
@@ -64,11 +65,13 @@ export function PortalDashboard({ clientName }: { clientName: string }) {
 
   return (
     <div className="mx-auto max-w-6xl px-4 pb-16 sm:px-6">
+      <ClientWelcome client={clientName} onboarded={onboarded} />
       <header className="flex items-center justify-between gap-3 py-5">
         <LogLogo className="h-8" />
         <div className="flex items-center gap-1">
           <span className="mr-2 hidden items-center gap-1.5 text-[11px] text-muted sm:inline-flex"><span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" /> Live</span>
           <Button variant="ghost" size="icon" onClick={toggle} aria-label="Toggle theme">{theme === "dark" ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}</Button>
+          <a href="/portal?welcome=1"><Button variant="ghost" size="sm">Welcome tour</Button></a>
           <Button variant="ghost" size="sm" onClick={logout}><LogOut className="h-4 w-4" /> Sign out</Button>
         </div>
       </header>

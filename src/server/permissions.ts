@@ -10,6 +10,7 @@ export type SessionUser = {
   departmentKey: string | null;
   isTestAccount: boolean;
   mustChangePassword: boolean;
+  onboarded: boolean;
   avatarColor: string;
 };
 

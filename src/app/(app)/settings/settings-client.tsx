@@ -57,7 +57,8 @@ export function SettingsClient() {
 
   return (
     <div className="space-y-5">
-      <PageHeader eyebrow="Account" title="Settings" subtitle={`${u.email} · ${ROLE_LABEL[u.role as RoleKey]}${u.department ? ` · ${u.department.name}` : ""}`} />
+      <PageHeader eyebrow="Account" title="Settings" subtitle={`${u.email} · ${ROLE_LABEL[u.role as RoleKey]}${u.department ? ` · ${u.department.name}` : ""}`}
+        actions={<a href="/dashboard?welcome=1"><Button size="sm">Watch the welcome again</Button></a>} />
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>
           <CardHeader title="Profile" icon={<UserRound className="h-4 w-4" />} />
