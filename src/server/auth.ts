@@ -59,12 +59,12 @@ export async function destroySession(token: string) {
 
 export function toSessionUser(u: {
   id: string; name: string; email: string; role: SessionUser["role"]; departmentId: string | null;
-  department?: { key: string } | null; isTestAccount: boolean; mustChangePassword: boolean; avatarColor: string;
+  department?: { key: string } | null; isTestAccount: boolean; mustChangePassword: boolean; avatarColor: string; onboardedAt?: Date | null;
 }): SessionUser {
   return {
     id: u.id, name: u.name, email: u.email, role: u.role, departmentId: u.departmentId,
     departmentKey: u.department?.key ?? null, isTestAccount: u.isTestAccount, mustChangePassword: u.mustChangePassword,
-    avatarColor: u.avatarColor,
+    avatarColor: u.avatarColor, onboarded: !!u.onboardedAt,
   };
 }
 

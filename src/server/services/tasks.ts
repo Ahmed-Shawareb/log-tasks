@@ -1043,7 +1043,7 @@ export async function addComment(actor: SessionUser, id: string, raw: unknown) {
     for (const uid of input.mentions ?? []) {
       const u = await tx.user.findUnique({ where: { id: uid }, include: { department: true } });
       if (!u?.isActive) continue;
-      const visible = await tx.task.count({ where: { AND: [{ id: task.id }, taskScope({ ...u, departmentKey: u.department?.key ?? null } as SessionUser)] } });
+      const visible = await tx.task.count({ where: { AND: [{ id: task.id }, taskScope({ ...u, departmentKey: u.department?.key ?? null, onboarded: !!u.onboardedAt } as SessionUser)] } });
       if (visible) mentionIds.push(u.id);
     }
     const c = await tx.comment.create({ data: { taskId: task.id, authorId: actor.id, body: input.body, mentions: mentionIds }, include: { author: { select: personSelect } } });
