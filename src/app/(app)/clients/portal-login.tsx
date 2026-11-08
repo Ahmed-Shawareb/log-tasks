@@ -15,15 +15,16 @@ export function suggestPassword() {
   return `Cl-${Array.from(r, (n) => a[n % a.length]).join("")}-7`;
 }
 
-export const portalUrl = () => (typeof window === "undefined" ? "/portal" : `${window.location.origin}/portal`);
+/** LOG clients sign in at /portal; personal clients at /space, which carries no LOG branding. */
+export const portalUrl = (personal = false) => `${typeof window === "undefined" ? "" : window.location.origin}${personal ? "/space/login" : "/portal/login"}`;
 
 /** Admin-only: the client's own login to their dashboard. */
-export function PortalLoginCard({ clientId, login, onSaved }: { clientId: string; login: PortalLogin; onSaved: () => void }) {
+export function PortalLoginCard({ clientId, login, onSaved, personal = false }: { clientId: string; login: PortalLogin; onSaved: () => void; personal?: boolean }) {
   const [email, setEmail] = useState(login?.email ?? "");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [url, setUrl] = useState("/portal");
-  useEffect(() => setUrl(portalUrl()), []);
+  useEffect(() => setUrl(portalUrl(personal)), [personal]);
   useEffect(() => setEmail(login?.email ?? ""), [login?.email]);
 
   const save = async (extra: { isActive?: boolean } = {}) => {

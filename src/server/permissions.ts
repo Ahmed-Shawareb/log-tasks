@@ -12,6 +12,7 @@ export type SessionUser = {
   mustChangePassword: boolean;
   onboarded: boolean;
   avatarColor: string;
+  canOwnPrivateClients: boolean;
 };
 
 /** Departments that work for every account manager (an Accounts employee works only for their own manager's team). */
@@ -25,8 +26,26 @@ export const isWorker = (u: SessionUser) => isWorkerRole(u.role);
 export const isSocialSpecialist = (u: SessionUser) => u.role === "SOCIAL_MEDIA_SPECIALIST";
 export const managerDeptKey = (u: SessionUser) => MANAGER_DEPARTMENT[u.role] ?? null;
 
+// ── Private (personal) clients ──
+// A personal client of the founder, its projects and their tasks carry `privateOwnerId`. Nobody else sees any of it —
+// not even other administrators — except the people a task is assigned to (or who gave it out / review it), who see
+// just that task. Every scope below is AND-ed with these guards.
+
+/** Private tasks: only the owner and the people on that task. */
+export const privateTaskGuard = (u: SessionUser): Prisma.TaskWhereInput => ({
+  OR: [{ privateOwnerId: null }, { privateOwnerId: u.id }, { assigneeId: u.id }, { creatorId: u.id }, { reviewerId: u.id }],
+});
+/** Private projects and clients: the owner only. */
+export const privateProjectGuard = (u: SessionUser): Prisma.ProjectWhereInput => ({ OR: [{ privateOwnerId: null }, { privateOwnerId: u.id }] });
+export const privateClientGuard = (u: SessionUser): Prisma.ClientWhereInput => ({ OR: [{ privateOwnerId: null }, { privateOwnerId: u.id }] });
+
 /** Prisma filter for the tasks a user may see. Every task query must be AND-ed with this. */
 export function taskScope(u: SessionUser): Prisma.TaskWhereInput {
+  const base = baseTaskScope(u);
+  return { AND: [base, privateTaskGuard(u)] };
+}
+
+function baseTaskScope(u: SessionUser): Prisma.TaskWhereInput {
   if (isAdmin(u)) return {};
   const mine: Prisma.TaskWhereInput[] = [{ assigneeId: u.id }, { creatorId: u.id }, { reviewerId: u.id }];
   if (isAccountManager(u)) {
@@ -43,6 +62,10 @@ export function taskScope(u: SessionUser): Prisma.TaskWhereInput {
 }
 
 export function projectScope(u: SessionUser): Prisma.ProjectWhereInput {
+  return { AND: [baseProjectScope(u), privateProjectGuard(u)] };
+}
+
+function baseProjectScope(u: SessionUser): Prisma.ProjectWhereInput {
   if (isAdmin(u)) return {};
   if (isAccountManager(u)) return { accountManagerId: u.id };
   if (isSocialSpecialist(u)) return { OR: [{ kind: "SOCIAL_MEDIA" }, { tasks: { some: { AND: [{ assigneeId: u.id }, { archivedAt: null }] } } }] };
@@ -51,6 +74,10 @@ export function projectScope(u: SessionUser): Prisma.ProjectWhereInput {
 }
 
 export function clientScope(u: SessionUser): Prisma.ClientWhereInput {
+  return { AND: [baseClientScope(u), privateClientGuard(u)] };
+}
+
+function baseClientScope(u: SessionUser): Prisma.ClientWhereInput {
   if (isAdmin(u)) return {};
   if (isAccountManager(u)) return { OR: [{ accountManagerId: u.id }, { projects: { some: { accountManagerId: u.id } } }] };
   if (isDeptManager(u)) return { projects: { some: projectScope(u) } };

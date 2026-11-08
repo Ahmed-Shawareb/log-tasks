@@ -7,9 +7,10 @@ import { CLOSED_STATUSES, DOER_ROLES, STATUS_META, isWorkerRole, type StatusKey 
 import { canSubmit, canBeReviewed, canTransition } from "@/lib/workflow";
 import { AppError, forbidden, invalid, notFound } from "../errors";
 import { activity, audit, notify } from "../audit";
+import { toSessionUser } from "../auth";
 import {
   canManageTask, canReviewTask, canUseDepartment, isAccountManager, isAdmin, isDeptManager, isManager, managerDeptKey,
-  notPlan, SHARED_DEPARTMENTS, taskScope, type SessionUser,
+  notPlan, privateProjectGuard, SHARED_DEPARTMENTS, taskScope, type SessionUser,
 } from "../permissions";
 import { checkAvailability, lockPerson } from "./availability";
 import { zonedParts } from "@/lib/time";
@@ -392,9 +393,13 @@ export async function createTask(actor: SessionUser, raw: unknown) {
     }
     if (!isManager(actor) && !parent) throw forbidden("Employees can only create subtasks of their own tasks.");
     const projectId = input.projectId ?? parent?.projectId ?? null;
+    // Private work stays private: a task inherits its project's (or parent's) owner.
+    let privateOwnerId = parent?.privateOwnerId ?? null;
     if (projectId) {
-      const project = await tx.project.findUnique({ where: { id: projectId } });
+      const project = await tx.project.findFirst({ where: { AND: [{ id: projectId }, parent ? {} : privateProjectGuard(actor)] } });
       if (!project) throw invalid("Project does not exist.");
+      if (parent && (project.privateOwnerId ?? null) !== (parent.privateOwnerId ?? null)) throw invalid("A subtask must stay in the same client as its task.");
+      privateOwnerId = project.privateOwnerId ?? privateOwnerId;
       if (isAccountManager(actor) && project.accountManagerId !== actor.id && !parent) throw forbidden("You can only create work in projects you manage.");
     }
 
@@ -436,7 +441,7 @@ export async function createTask(actor: SessionUser, raw: unknown) {
     const task = await tx.task.create({
       data: {
         title, description: input.description ?? type?.description ?? null, typeId: type?.id ?? null, quantity,
-        projectId, parentId: parent?.id ?? null, departmentId, creatorId: actor.id, assigneeId, reviewerId,
+        projectId, parentId: parent?.id ?? null, departmentId, creatorId: actor.id, assigneeId, reviewerId, privateOwnerId,
         priority: input.priority ?? "MEDIUM", status: input.status ?? (assigneeId ? "READY" : "BACKLOG"),
         startDate, dueAt, estimateMinutes: input.estimateMinutes ?? null, labels: [...new Set(input.labels ?? [])],
         checklist: { create: (input.checklist ?? []).map((text, position) => ({ text, position })) },
@@ -533,7 +538,7 @@ export async function distributeTask(actor: SessionUser, id: string, raw: unknow
           title: (qty ? [`${qty} ${unitLabel(task.type, qty)}`, stepName, base].filter(Boolean).join(" · ") : task.title).slice(0, 200),
           description: al.note || task.description, typeId: task.typeId, quantity: qty, stage,
           projectId: task.projectId, parentId: task.id, departmentId: departmentFor(a) ?? task.departmentId,
-          creatorId: actor.id, assigneeId: a.id, reviewerId: a.id === actor.id ? task.reviewerId : actor.id,
+          creatorId: actor.id, assigneeId: a.id, reviewerId: a.id === actor.id ? task.reviewerId : actor.id, privateOwnerId: task.privateOwnerId,
           priority: task.priority, status: "READY", dueAt, labels: task.labels,
         },
       });
@@ -630,8 +635,9 @@ export async function updateTask(actor: SessionUser, id: string, raw: unknown) {
     }
     if (input.projectId !== undefined && input.projectId !== task.projectId) {
       if (input.projectId) {
-        const p = await tx.project.findUnique({ where: { id: input.projectId } });
+        const p = await tx.project.findFirst({ where: { AND: [{ id: input.projectId }, privateProjectGuard(actor)] } });
         if (!p) throw invalid("Project does not exist.");
+        if ((p.privateOwnerId ?? null) !== (task.privateOwnerId ?? null)) throw invalid("Private work and LOG work can't be mixed: this task can't move to that project.");
         if (isAccountManager(actor) && p.accountManagerId !== actor.id) throw forbidden("You can only move work into projects you manage.");
       }
       set("projectId", input.projectId);
@@ -640,6 +646,7 @@ export async function updateTask(actor: SessionUser, id: string, raw: unknown) {
       if (input.parentId) {
         const p = await loadForActor(tx, actor, input.parentId);
         if (!canManageTask(actor, p)) throw forbidden("You cannot move work under that task.");
+        if ((p.privateOwnerId ?? null) !== (task.privateOwnerId ?? null)) throw invalid("Private work and LOG work can't be mixed: this task can't move under that task.");
         await assertNoParentCycle(tx, task.id, input.parentId);
       }
       set("parentId", input.parentId);
@@ -1043,7 +1050,7 @@ export async function addComment(actor: SessionUser, id: string, raw: unknown) {
     for (const uid of input.mentions ?? []) {
       const u = await tx.user.findUnique({ where: { id: uid }, include: { department: true } });
       if (!u?.isActive) continue;
-      const visible = await tx.task.count({ where: { AND: [{ id: task.id }, taskScope({ ...u, departmentKey: u.department?.key ?? null, onboarded: !!u.onboardedAt } as SessionUser)] } });
+      const visible = await tx.task.count({ where: { AND: [{ id: task.id }, taskScope(toSessionUser(u))] } });
       if (visible) mentionIds.push(u.id);
     }
     const c = await tx.comment.create({ data: { taskId: task.id, authorId: actor.id, body: input.body, mentions: mentionIds }, include: { author: { select: personSelect } } });

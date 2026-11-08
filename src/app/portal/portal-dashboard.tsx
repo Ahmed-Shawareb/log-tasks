@@ -38,7 +38,9 @@ function useTheme() {
   return { theme, toggle };
 }
 
-export function PortalDashboard({ clientName, onboarded }: { clientName: string; onboarded: boolean }) {
+/** `personal`: a personal client's dashboard (/space) — identical, but with no LOG branding anywhere. */
+export function PortalDashboard({ clientName, onboarded, personal = false }: { clientName: string; onboarded: boolean; personal?: boolean }) {
+  const home = personal ? "/space" : "/portal";
   const router = useRouter();
   const { theme, toggle } = useTheme();
   const [data, setData] = useState<Overview | null>(null);
@@ -46,9 +48,9 @@ export function PortalDashboard({ clientName, onboarded }: { clientName: string;
 
   const load = useCallback(async () => {
     const r = await fetch("/api/portal/overview", { cache: "no-store" });
-    if (r.status === 401) { router.replace("/portal/login"); return; }
+    if (r.status === 401) { router.replace(`${home}/login`); return; }
     if (r.ok) setData(await r.json());
-  }, [router]);
+  }, [router, home]);
   // The account manager's updates show up on their own: refresh every few seconds and when the tab comes back.
   useEffect(() => {
     load();
@@ -59,19 +61,24 @@ export function PortalDashboard({ clientName, onboarded }: { clientName: string;
   }, [load]);
   useEffect(() => { if (data && !data.projects.some((p) => p.kind === "SOCIAL_MEDIA") && tab === "feed") setTab("deliverables"); }, [data, tab]);
 
-  const logout = async () => { await fetch("/api/portal/logout", { method: "POST" }); router.replace("/portal/login"); };
+  const logout = async () => { await fetch("/api/portal/logout", { method: "POST" }); router.replace(`${home}/login`); };
   const next = data?.items.find((i) => i.state !== "done" && i.dueAt && new Date(i.dueAt) >= new Date(new Date().setHours(0, 0, 0, 0)));
   const hasFeed = !!data?.projects.some((p) => p.kind === "SOCIAL_MEDIA");
 
   return (
     <div className="mx-auto max-w-6xl px-4 pb-16 sm:px-6">
-      <ClientWelcome client={clientName} onboarded={onboarded} />
+      <ClientWelcome client={clientName} onboarded={onboarded} personal={personal} />
       <header className="flex items-center justify-between gap-3 py-5">
-        <LogLogo className="h-8" />
+        {personal ? (
+          <span className="flex items-center gap-2.5">
+            <span className="grid h-9 w-9 place-items-center rounded-xl bg-[linear-gradient(135deg,var(--accent),var(--accent-2))] font-display text-lg font-bold text-white">{clientName.slice(0, 1).toUpperCase()}</span>
+            <span className="text-sm font-semibold text-fg">Your dashboard</span>
+          </span>
+        ) : <LogLogo className="h-8" />}
         <div className="flex items-center gap-1">
           <span className="mr-2 hidden items-center gap-1.5 text-[11px] text-muted sm:inline-flex"><span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" /> Live</span>
           <Button variant="ghost" size="icon" onClick={toggle} aria-label="Toggle theme">{theme === "dark" ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}</Button>
-          <a href="/portal?welcome=1" title="Welcome tour"><Button variant="ghost" size="sm" aria-label="Welcome tour"><Sparkles className="h-4 w-4" /><span className="hidden sm:inline">Welcome tour</span></Button></a>
+          <a href={`${home}?welcome=1`} title="Welcome tour"><Button variant="ghost" size="sm" aria-label="Welcome tour"><Sparkles className="h-4 w-4" /><span className="hidden sm:inline">Welcome tour</span></Button></a>
           <Button variant="ghost" size="sm" onClick={logout} aria-label="Sign out"><LogOut className="h-4 w-4" /><span className="hidden sm:inline">Sign out</span></Button>
         </div>
       </header>

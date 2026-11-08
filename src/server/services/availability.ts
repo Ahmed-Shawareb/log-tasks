@@ -60,11 +60,12 @@ async function personalConflicts(tx: Tx, person: Person, start: Date, end: Date,
       scheduledStart: { lt: end }, scheduledEnd: { gt: start },
       ...(excludeTaskId ? { id: { not: excludeTaskId } } : {}),
     },
-    select: { id: true, number: true, title: true },
+    select: { id: true, number: true, title: true, privateOwnerId: true },
     take: 5,
   });
   for (const t of overlaps) {
-    out.push({ type: "OVERLAP", message: `Already booked on ${taskRef(t.number)} · ${t.title}.`, taskId: t.id, taskNumber: t.number });
+    // Private work is never named to anyone else: they only learn the person is busy.
+    out.push(t.privateOwnerId ? { type: "OVERLAP", message: "Already booked at that time.", taskId: "", taskNumber: 0 } : { type: "OVERLAP", message: `Already booked on ${taskRef(t.number)} · ${t.title}.`, taskId: t.id, taskNumber: t.number });
   }
   return out;
 }

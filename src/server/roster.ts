@@ -8,10 +8,12 @@ export type RosterEntry = {
   department: "MANAGEMENT" | "ACCOUNTS" | "PERFORMANCE" | "PRODUCTION";
   title: string;
   color: string;
+  /** May create personal clients nobody else can see (the founder only). */
+  privateClients?: boolean;
 };
 
 export const ROSTER: RosterEntry[] = [
-  { name: "Mostafa Makady", email: "m.makady@lotsofgrowthgroup.com", role: "ADMIN", department: "MANAGEMENT", title: "Founder", color: "#c8382a" },
+  { name: "Mostafa Makady", email: "m.makady@lotsofgrowthgroup.com", role: "ADMIN", department: "MANAGEMENT", title: "Founder", color: "#c8382a", privateClients: true },
   { name: "Omar", email: "omar@lotsofgrowthgroup.com", role: "ADMIN", department: "MANAGEMENT", title: "Administrator", color: "#0ea5e9" },
   { name: "Mahmoud", email: "mahmoud@lotsofgrowthgroup.com", role: "ADMIN", department: "MANAGEMENT", title: "Administrator", color: "#10b981" },
   { name: "Rawan", email: "rawan@lotsofgrowthgroup.com", role: "ACCOUNT_MANAGER", department: "ACCOUNTS", title: "Account Manager · Content creator", color: "#7c3aed" },

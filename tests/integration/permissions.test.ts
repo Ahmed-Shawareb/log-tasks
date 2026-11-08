@@ -75,7 +75,7 @@ describe("role-based access control (server side)", () => {
   it("administrators see company-wide data", async () => {
     const admin = await as(EMAILS.admin);
     const all = await listTasks(admin, { pageSize: 500, plans: "1" });
-    expect(all.total).toBe(await db.task.count({ where: { archivedAt: null } }));
+    expect(all.total).toBe(await db.task.count({ where: { archivedAt: null, privateOwnerId: null } })); // except others' personal clients
     expect((await listClients(admin)).length).toBeGreaterThanOrEqual(3);
     expect((await listAudit(admin, {})).total).toBeGreaterThan(0);
   });

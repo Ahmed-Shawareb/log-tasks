@@ -18,7 +18,8 @@ const TTL_HOURS = 24 * 7;
 const WINDOW_MIN = 15;
 const MAX_FAILURES = 5;
 
-export type PortalUser = { id: string; email: string; clientId: string; clientName: string; onboarded: boolean };
+/** `personal`: a personal client of the founder — their dashboard (/space) carries no LOG branding. */
+export type PortalUser = { id: string; email: string; clientId: string; clientName: string; onboarded: boolean; personal: boolean };
 
 export const getPortalUser = cache(async (): Promise<PortalUser | null> => {
   const token = (await cookies()).get(PORTAL_COOKIE)?.value;
@@ -29,12 +30,12 @@ export const getPortalUser = cache(async (): Promise<PortalUser | null> => {
     await db.clientSession.delete({ where: { id: s.id } }).catch(() => {});
     return null;
   }
-  return { id: s.user.id, email: s.user.email, clientId: s.user.clientId, clientName: s.user.client.name, onboarded: !!s.user.onboardedAt };
+  return { id: s.user.id, email: s.user.email, clientId: s.user.clientId, clientName: s.user.client.name, onboarded: !!s.user.onboardedAt, personal: !!s.user.client.privateOwnerId };
 });
 
-export async function requirePortalPage() {
+export async function requirePortalPage(loginPath = "/portal/login") {
   const u = await getPortalUser();
-  if (!u) redirect("/portal/login");
+  if (!u) redirect(loginPath);
   return u;
 }
 

@@ -78,7 +78,7 @@ export async function provisionProduction({ force = false, reset = false, shared
   const sharedPassword = shared ? oneTimePassword() : null;
   for (const p of ROSTER) {
     const password = sharedPassword ?? oneTimePassword();
-    const data = { name: p.name, role: p.role, departmentId: dept[p.department], title: p.title, avatarColor: p.color, passwordHash: await hashPassword(password), mustChangePassword: true, isActive: true, isTestAccount: false };
+    const data = { name: p.name, role: p.role, departmentId: dept[p.department], title: p.title, avatarColor: p.color, passwordHash: await hashPassword(password), mustChangePassword: true, isActive: true, isTestAccount: false, canOwnPrivateClients: p.role === "ADMIN" && !!p.privateClients };
     const u = await db.user.upsert({ where: { email: p.email }, create: { email: p.email, ...data }, update: data });
     await db.session.deleteMany({ where: { userId: u.id } });
     ids[p.email] = u.id;

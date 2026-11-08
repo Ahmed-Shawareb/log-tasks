@@ -66,11 +66,13 @@ export async function getClient(actor: SessionUser, id: string) {
 
 export async function createClient(actor: SessionUser, raw: unknown) {
   if (!canEditClients(actor)) throw forbidden();
-  const input = clientSchema.parse(raw);
-  const amId = isAccountManager(actor) ? (input.accountManagerId ?? actor.id) : input.accountManagerId;
+  const { personal, ...input } = clientSchema.extend({ personal: z.boolean().optional() }).parse(raw);
+  // A personal client belongs to its owner alone: nobody else is its account manager, and it can never become a LOG client.
+  if (personal && !actor.canOwnPrivateClients) throw forbidden("Personal clients are not available for your account.");
+  const amId = personal ? actor.id : isAccountManager(actor) ? (input.accountManagerId ?? actor.id) : input.accountManagerId;
   if (isAccountManager(actor) && amId !== actor.id) throw forbidden("You can only create clients you manage.");
   await assertAccountManager(amId);
-  const c = await db.client.create({ data: { ...input, accountManagerId: amId ?? null } });
+  const c = await db.client.create({ data: { ...input, accountManagerId: amId ?? null, privateOwnerId: personal ? actor.id : null } });
   await audit(actor, "client.create", "Client", c.id, { after: { name: c.name } });
   return c;
 }
@@ -81,6 +83,7 @@ export async function updateClient(actor: SessionUser, id: string, raw: unknown)
   if (!isAdmin(actor) && !(isAccountManager(actor) && before.accountManagerId === actor.id)) throw forbidden();
   const input = clientSchema.partial().parse(raw);
   if (input.accountManagerId !== undefined && !isAdmin(actor)) throw forbidden("Only administrators can change a client's account manager.");
+  if (before.privateOwnerId && input.accountManagerId !== undefined && input.accountManagerId !== before.privateOwnerId) throw invalid("A personal client stays with its owner.");
   await assertAccountManager(input.accountManagerId);
   const c = await db.client.update({ where: { id }, data: input });
   await audit(actor, input.status === "ARCHIVED" ? "client.archive" : "client.update", "Client", id, { before, after: input });
@@ -156,7 +159,8 @@ export async function createProject(actor: SessionUser, raw: unknown) {
   const input = projectSchema.parse(raw);
   const client = await db.client.findFirst({ where: { AND: [{ id: input.clientId }, clientScope(actor)] } });
   if (!client) throw invalid("Client does not exist.");
-  const amId = isAccountManager(actor) ? actor.id : (input.accountManagerId ?? client.accountManagerId);
+  // Every project of a personal client is private to the same owner, who is also its account manager.
+  const amId = client.privateOwnerId ?? (isAccountManager(actor) ? actor.id : (input.accountManagerId ?? client.accountManagerId));
   await assertAccountManager(amId);
   const start = d(input.startDate), target = d(input.targetDate);
   if (start && target && target < start) throw invalid("Target date cannot be before the start date.");
@@ -164,7 +168,7 @@ export async function createProject(actor: SessionUser, raw: unknown) {
   const postCount = input.kind === "SOCIAL_MEDIA" ? input.postCount! : null;
   const p = await db.$transaction(async (tx) => {
     const created = await tx.project.create({
-      data: { ...input, postCount, accountManagerId: amId ?? null, startDate: start ?? null, targetDate: target ?? null },
+      data: { ...input, postCount, accountManagerId: amId ?? null, privateOwnerId: client.privateOwnerId, startDate: start ?? null, targetDate: target ?? null },
     });
     if (postCount) await syncPostSlots(tx, created.id, postCount);
     return created;
@@ -183,6 +187,8 @@ export async function updateProject(actor: SessionUser, id: string, raw: unknown
   if (input.accountManagerId !== undefined && input.accountManagerId !== before.accountManagerId && !isAdmin(actor)) {
     throw forbidden("Only administrators can change a project's account manager.");
   }
+  if (before.privateOwnerId && input.accountManagerId !== undefined && input.accountManagerId !== before.privateOwnerId) throw invalid("A personal project stays with its owner.");
+  if (input.clientId !== undefined && input.clientId !== before.clientId) throw invalid("A project can't move to another client.");
   await assertAccountManager(input.accountManagerId);
   const kind = input.kind ?? before.kind;
   const postCount = kind === "SOCIAL_MEDIA" ? (input.postCount ?? before.postCount) : before.postCount;

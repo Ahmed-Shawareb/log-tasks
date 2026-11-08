@@ -84,7 +84,7 @@ function LightRibbons({ accent, step }: { accent: string; step: number }) {
   return <canvas ref={ref} aria-hidden className="absolute inset-0 h-full w-full [filter:saturate(1.25)_contrast(1.05)]" />;
 }
 
-export function Onboarding({ slides, finishLabel = "Let's go", onDone }: { slides: Slide[]; finishLabel?: string; onDone: () => void | Promise<void> }) {
+export function Onboarding({ slides, finishLabel = "Let's go", onDone, logo = true }: { slides: Slide[]; finishLabel?: string; onDone: () => void | Promise<void>; logo?: boolean }) {
   const [i, setI] = useState(0);
   const [closing, setClosing] = useState(false);
   const s = slides[i]!;
@@ -137,7 +137,7 @@ export function Onboarding({ slides, finishLabel = "Let's go", onDone }: { slide
 
           <div className="relative z-30 flex h-full flex-col px-6 pb-[8vh] pt-[8vh] sm:px-12">
             <div className="flex items-center justify-between">
-              <LogLogo className="h-8 text-white" />
+              {logo ? <LogLogo className="h-8 text-white" /> : <span />}
               <button onClick={finish} className="rounded-full border border-white/20 px-4 py-1.5 text-xs uppercase tracking-[0.2em] text-white/70 backdrop-blur transition hover:border-white/50 hover:text-white">Skip</button>
             </div>
 

@@ -20,7 +20,7 @@ export function ProjectFormModal({ open, onClose, onSaved, project, defaultClien
   open: boolean; onClose: () => void; onSaved: (p: { id: string }) => void; project?: ProjectInput | null; defaultClientId?: string;
 }) {
   const { isAdmin, user } = useApp();
-  const [clients, setClients] = useState<{ id: string; name: string }[]>([]);
+  const [clients, setClients] = useState<{ id: string; name: string; privateOwnerId?: string | null }[]>([]);
   const [ams, setAms] = useState<Person[]>([]);
   const [busy, setBusy] = useState(false);
   const empty: ProjectInput = { name: "", clientId: defaultClientId ?? "", description: "", requirements: "", notes: "", accountManagerId: isAdmin ? "" : user.id, status: "PLANNING", priority: "MEDIUM", color: "#8b5cf6", startDate: "", targetDate: "", kind: "STANDARD", postCount: 9 };
@@ -29,7 +29,7 @@ export function ProjectFormModal({ open, onClose, onSaved, project, defaultClien
   useEffect(() => {
     if (!open) return;
     setF(project ? { ...project, startDate: day(project.startDate), targetDate: day(project.targetDate) } : empty);
-    api<{ id: string; name: string }[]>("/api/clients").then(setClients).catch(() => {});
+    api<{ id: string; name: string; privateOwnerId?: string | null }[]>("/api/clients").then(setClients).catch(() => {});
     if (isAdmin) api<Person[]>("/api/users").then((u) => setAms(u.filter((p) => p.role === "ACCOUNT_MANAGER" || p.role === "ADMIN"))).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, project]);
@@ -44,7 +44,8 @@ export function ProjectFormModal({ open, onClose, onSaved, project, defaultClien
       status: f.status, priority: f.priority, color: f.color, startDate: f.startDate || null, targetDate: f.targetDate || null,
       kind: f.kind ?? "STANDARD", ...(f.kind === "SOCIAL_MEDIA" ? { postCount: Number(f.postCount) || null } : {}),
     };
-    if (isAdmin) body.accountManagerId = f.accountManagerId || null;
+    const personal = !!clients.find((c) => c.id === f.clientId)?.privateOwnerId;
+    if (isAdmin && !personal) body.accountManagerId = f.accountManagerId || null;
     try {
       const p = project?.id
         ? await api<{ id: string }>(`/api/projects/${project.id}`, { method: "PATCH", body })
@@ -86,7 +87,9 @@ export function ProjectFormModal({ open, onClose, onSaved, project, defaultClien
             {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </Select>
         </Field>
-        {isAdmin ? (
+        {clients.find((c) => c.id === f.clientId)?.privateOwnerId ? (
+          <Field label="Account manager"><Input disabled value="You (personal client — private to you)" /></Field>
+        ) : isAdmin ? (
           <Field label="Account manager">
             <Select value={f.accountManagerId ?? ""} onChange={set("accountManagerId")}>
               <option value="">Client’s account manager</option>
