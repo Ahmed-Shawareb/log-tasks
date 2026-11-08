@@ -1,7 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Ban, Building2, CalendarDays, CheckCircle2, ClipboardList, Flame, ListTodo, Pencil, Plus } from "lucide-react";
+import { ArrowLeft, Ban, Building2, CalendarDays, CheckCircle2, ClipboardList, Flame, ListTodo, Lock, Pencil, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { PROJECT_STATUSES, STATUS_META, humanize, type StatusKey } from "@/lib/constants";
 import { api, fmtDate } from "@/lib/client";
@@ -17,6 +17,7 @@ import { PROJECT_STATUS_COLOR } from "../projects-client";
 const isPlan = (t: TaskItem) => t.stage === null && !t.parent && !!t.type?.stages?.length && t.quantity !== null;
 
 type Project = ProjectInput & {
+  privateOwnerId: string | null;
   id: string; client: { id: string; name: string; contactName: string | null; contactEmail: string | null };
   accountManager: { id: string; name: string; avatarColor: string; email: string } | null;
 };
@@ -53,7 +54,7 @@ export function ProjectDetailClient({ id }: { id: string }) {
     <div className="space-y-5">
       <Link href="/projects" className="inline-flex items-center gap-1 text-xs text-muted hover:text-fg"><ArrowLeft className="h-3.5 w-3.5" /> All projects</Link>
       <PageHeader
-        eyebrow={<span className="inline-flex items-center gap-2"><span className="h-2 w-2 rounded-full" style={{ background: p.color }} />{p.client.name}</span>}
+        eyebrow={<span className="inline-flex items-center gap-2"><span className="h-2 w-2 rounded-full" style={{ background: p.color }} />{p.client.name}{p.privateOwnerId && <span className="inline-flex items-center gap-1 text-amber-400"><Lock className="h-3 w-3" /> Personal · only you can see it</span>}</span>}
         title={p.name}
         subtitle={<span className="inline-flex flex-wrap items-center gap-3">
           <span className="inline-flex items-center gap-1"><CalendarDays className="h-3.5 w-3.5" /> {fmtDate(p.startDate)} → {fmtDate(p.targetDate)}</span>

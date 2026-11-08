@@ -38,9 +38,9 @@ function staffSlides(name: string, role: string): Slide[] {
   return [hello, ...(byRole[role] ?? byRole.EMPLOYEE!), done];
 }
 
-export function clientSlides(client: string): Slide[] {
+export function clientSlides(client: string, personal = false): Slide[] {
   return [
-    { eyebrow: "Welcome", title: `Hello, ${client}`, body: "This is your space at Lots of Growth: everything we make for you, and when it arrives.", accent: "#7c5cff" },
+    { eyebrow: "Welcome", title: `Hello, ${client}`, body: personal ? "This is your space: everything being made for you, and when it arrives." : "This is your space at Lots of Growth: everything we make for you, and when it arrives.", accent: "#7c5cff" },
     { eyebrow: "01 · Your feed", title: "See it before the world does", body: "Your profile grid, post by post, exactly as it will go live. Tap a post to see it; reels open the video.", points: ["Posts, reels and carousels", "Download the whole grid as one image"], accent: "#ff3d81" },
     { eyebrow: "02 · Deliverables", title: "Every piece, every date", body: "What's delivered, what's being checked and what's coming next, with a calendar of every date.", accent: "#3ad7ff" },
     { eyebrow: "03 · Always live", title: "It moves as we move", body: "The moment your team updates something, it shows up here. No refresh needed.", accent: "#ffb347" },
@@ -69,12 +69,12 @@ export function StaffWelcome() {
 }
 
 /** Client dashboard: first sign-in, or ?welcome=1. */
-export function ClientWelcome({ client, onboarded }: { client: string; onboarded: boolean }) {
+export function ClientWelcome({ client, onboarded, personal = false }: { client: string; onboarded: boolean; personal?: boolean }) {
   const [show, setShow] = useState(false);
   useEffect(() => { setShow(!onboarded || new URLSearchParams(window.location.search).get("welcome") === "1"); }, [onboarded]);
   if (!show) return null;
   return (
-    <Onboarding slides={clientSlides(client)} finishLabel="Open my dashboard" onDone={async () => {
+    <Onboarding slides={clientSlides(client, personal)} logo={!personal} finishLabel="Open my dashboard" onDone={async () => {
       await fetch("/api/portal/onboarded", { method: "POST" }).catch(() => {});
       setTimeout(() => setShow(false), 1000);
     }} />

@@ -133,8 +133,17 @@ export async function globalSearch(actor: SessionUser, q: string) {
 
 export async function listAudit(actor: SessionUser, opts: { q?: string; entityType?: string; page?: number }) {
   if (!isAdmin(actor)) throw forbidden("Administrator access required.");
+  // Someone else's personal clients, their projects and tasks never show up — not even in the audit trail.
+  const others = { privateOwnerId: { not: null }, NOT: { privateOwnerId: actor.id } };
+  const [pc, pp, pt] = await Promise.all([
+    db.client.findMany({ where: others, select: { id: true } }),
+    db.project.findMany({ where: others, select: { id: true } }),
+    db.task.findMany({ where: others, select: { id: true } }),
+  ]);
+  const hidden = [...pc, ...pp, ...pt].map((x) => x.id);
   const where: Prisma.AuditLogWhereInput = {
     AND: [
+      hidden.length ? { OR: [{ entityId: null }, { entityId: { notIn: hidden } }] } : {},
       opts.entityType ? { entityType: opts.entityType } : {},
       opts.q ? { OR: [{ action: { contains: opts.q, mode: "insensitive" } }, { actorEmail: { contains: opts.q, mode: "insensitive" } }, { entityId: opts.q }] } : {},
     ],

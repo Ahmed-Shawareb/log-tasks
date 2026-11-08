@@ -51,7 +51,7 @@ async function main() {
   const ids: Record<string, string> = {};
   for (const p of ROSTER) {
     const pw = password();
-    const data = { name: p.name, role: p.role, departmentId: dept[p.department], title: p.title, avatarColor: p.color, passwordHash: await bcrypt.hash(pw, 12), mustChangePassword: false, isActive: true, isTestAccount: false };
+    const data = { name: p.name, role: p.role, departmentId: dept[p.department], title: p.title, avatarColor: p.color, passwordHash: await bcrypt.hash(pw, 12), mustChangePassword: false, isActive: true, isTestAccount: false, canOwnPrivateClients: p.role === "ADMIN" && !!p.privateClients };
     const u = await db.user.upsert({ where: { email: p.email }, create: { email: p.email, ...data }, update: data });
     ids[p.email] = u.id;
     rows.push({ name: p.name, role: p.role, title: p.title, email: p.email, password: pw });

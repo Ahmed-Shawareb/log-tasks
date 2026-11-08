@@ -36,7 +36,8 @@ describe("data integrity", () => {
     const range = resolveRange("30d");
     const before = await dashboardData(admin, range);
     // Orders ("30 videos") are plans, not work: only their steps count.
-    expect(before.kpis.open).toBe(await db.task.count({ where: { AND: [notPlan, { archivedAt: null, status: { notIn: ["APPROVED", "CANCELLED"] } }] } }));
+    // Someone else's personal (private) work is invisible to this admin too.
+    expect(before.kpis.open).toBe(await db.task.count({ where: { AND: [notPlan, { privateOwnerId: null }, { archivedAt: null, status: { notIn: ["APPROVED", "CANCELLED"] } }] } }));
     await createTask(admin, { title: "Metric probe", dueAt: new Date(Date.now() - 3600_000).toISOString() });
     const after = await dashboardData(admin, range);
     expect(after.kpis.open).toBe(before.kpis.open + 1);

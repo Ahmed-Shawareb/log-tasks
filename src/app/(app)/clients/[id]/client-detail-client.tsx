@@ -2,7 +2,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Ban, Briefcase, Mail, Pencil, Phone, Plus } from "lucide-react";
+import { ArrowLeft, Ban, Briefcase, Lock, Mail, Pencil, Phone, Plus } from "lucide-react";
 import { humanize } from "@/lib/constants";
 import { fmtDate } from "@/lib/client";
 import { useApp } from "@/components/app-context";
@@ -32,7 +32,7 @@ export function ClientDetailClient({ id }: { id: string }) {
   return (
     <div className="space-y-5">
       <Link href="/clients" className="inline-flex items-center gap-1 text-xs text-muted hover:text-fg"><ArrowLeft className="h-3.5 w-3.5" /> All clients</Link>
-      <PageHeader eyebrow={c.industry ?? "Client"} title={c.name}
+      <PageHeader eyebrow={c.privateOwnerId ? <span className="inline-flex items-center gap-1.5"><Lock className="h-3 w-3" /> Personal client · only you can see it</span> : c.industry ?? "Client"} title={c.name}
         subtitle={<Badge color={CLIENT_STATUS_COLOR[c.status]} dot>{humanize(c.status)}</Badge>}
         actions={canEdit && <>
           <Button size="sm" onClick={() => setEditing(true)}><Pencil className="h-4 w-4" /> Edit</Button>
@@ -56,7 +56,7 @@ export function ClientDetailClient({ id }: { id: string }) {
             <p className="whitespace-pre-wrap text-sm text-fg-2">{c.notes || <span className="text-muted">No notes.</span>}</p>
           </div>
         </Card>
-        {user.role === "ADMIN" && <div className="xl:order-last"><PortalLoginCard clientId={c.id} login={c.portalLogin} onSaved={reload} /></div>}
+        {user.role === "ADMIN" && <div className="xl:order-last"><PortalLoginCard clientId={c.id} login={c.portalLogin} onSaved={reload} personal={!!c.privateOwnerId} /></div>}
         <Card className="xl:col-span-2">
           <CardHeader title="Projects" subtitle={`${c.projects.length} visible to you`} icon={<Briefcase className="h-4 w-4" />} />
           {c.projects.length === 0 ? <EmptyState icon={<Briefcase className="h-6 w-6" />} title="No projects yet" /> : (

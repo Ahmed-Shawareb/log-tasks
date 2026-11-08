@@ -96,6 +96,7 @@ model User {
   isTestAccount      Boolean   @default(false)
   mustChangePassword Boolean   @default(false)
   onboardedAt        DateTime? // first-time welcome screens seen
+  canOwnPrivateClients Boolean @default(false) // may create personal clients that nobody else (not even other admins) can see
   // Working schedule (minutes from midnight in the company timezone; ISO weekdays 1=Mon … 7=Sun)
   workDays           Int[]     @default([7, 1, 2, 3, 4])
   workStartMin       Int       @default(540)
@@ -235,6 +236,8 @@ model Client {
   notes            String?
   status           ClientStatus @default(ACTIVE)
   accountManagerId String?
+  /// Personal (private) client: only this user sees it, its projects and their tasks — plus whoever is assigned a task.
+  privateOwnerId   String?
   isDemo           Boolean      @default(false)
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
@@ -244,6 +247,7 @@ model Client {
 
   @@index([status])
   @@index([accountManagerId])
+  @@index([privateOwnerId])
 }
 
 model Project {
@@ -255,6 +259,7 @@ model Project {
   notes            String?
   accountManagerId String?
   kind             ProjectKind   @default(STANDARD)
+  privateOwnerId   String? // copied from the client: set for every project of a private client
   postCount        Int? // social media projects: how many posts the feed grid holds
   status           ProjectStatus @default(PLANNING)
   priority         Priority      @default(MEDIUM)
@@ -272,6 +277,7 @@ model Project {
   @@index([clientId])
   @@index([accountManagerId])
   @@index([status])
+  @@index([privateOwnerId])
 }
 
 /// One square of a social media project's feed grid (position 1 is the top-left square).
@@ -359,6 +365,7 @@ model Task {
   typeId          String?
   quantity        Int? // e.g. 60 videos — split between people with "distribute"
   stage           Int? // index into type.stages when this task is one step of a staged task
+  privateOwnerId  String? // copied from the project/parent: private work, hidden from everyone but the owner and its assignee
   labels          String[]   @default([])
   position        Float      @default(0)
   completedAt     DateTime?
@@ -395,6 +402,7 @@ model Task {
   @@index([scheduledStart, scheduledEnd])
   @@index([archivedAt])
   @@index([typeId])
+  @@index([privateOwnerId])
 }
 
 model TaskDependency {

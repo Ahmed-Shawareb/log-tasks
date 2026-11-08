@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
-import { Archive, Building2, Mail, Pencil, Phone, Plus, Search } from "lucide-react";
+import { Archive, Building2, Lock, Mail, Pencil, Phone, Plus, Search } from "lucide-react";
 import { toast } from "sonner";
 import { CLIENT_STATUSES, humanize } from "@/lib/constants";
 import { api, qs } from "@/lib/client";
@@ -49,7 +49,7 @@ export function ClientsClient() {
               <Card hover className="flex h-full flex-col p-5">
                 <div className="flex items-start justify-between gap-3">
                   <Link href={`/clients/${c.id}`} className="min-w-0">
-                    <h3 className="truncate text-base font-semibold text-fg hover:underline">{c.name}</h3>
+                    <h3 className="flex items-center gap-1.5 truncate text-base font-semibold text-fg hover:underline">{c.privateOwnerId && <Lock className="h-3.5 w-3.5 shrink-0 text-amber-400" aria-label="Personal client" />}{c.name}</h3>
                     <div className="truncate text-xs text-muted">{c.industry ?? "—"}</div>
                   </Link>
                   <Badge color={CLIENT_STATUS_COLOR[c.status]} dot>{humanize(c.status)}</Badge>
