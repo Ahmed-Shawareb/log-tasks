@@ -1,11 +1,12 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
-import { Archive, Building2, Lock, Mail, Pencil, Phone, Plus, Search } from "lucide-react";
+import { Archive, Building2, Lock, Mail, Pencil, Phone, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { CLIENT_STATUSES, humanize } from "@/lib/constants";
 import { api, qs } from "@/lib/client";
 import { useApp } from "@/components/app-context";
+import { DeleteDialog } from "@/components/delete-dialog";
 import { useFetch } from "@/components/forms";
 import { Avatar, Badge, Button, Card, ConfirmDialog, EmptyState, Input, PageHeader, Select, Skeleton, Stagger, StaggerItem } from "@/components/ui";
 import { ClientFormModal, type ClientInput } from "./client-form";
@@ -21,6 +22,7 @@ export function ClientsClient() {
   const [status, setStatus] = useState("");
   const [editing, setEditing] = useState<ClientRow | null | "new">(null);
   const [archiving, setArchiving] = useState<ClientRow | null>(null);
+  const [deleting, setDeleting] = useState<ClientRow | null>(null);
   const [busy, setBusy] = useState(false);
   const { data, error, reload } = useFetch<ClientRow[]>(`/api/clients${qs({ q, status })}`);
   const canEdit = (c?: ClientRow) => user.role === "ADMIN" || (user.role === "ACCOUNT_MANAGER" && (!c || c.accountManagerId === user.id));
@@ -67,6 +69,7 @@ export function ClientsClient() {
                   <div className="mt-3 flex gap-2 border-t border-line pt-3">
                     <Button size="sm" variant="ghost" onClick={() => setEditing(c)}><Pencil className="h-3.5 w-3.5" /> Edit</Button>
                     {c.status !== "ARCHIVED" && <Button size="sm" variant="ghost" onClick={() => setArchiving(c)}><Archive className="h-3.5 w-3.5" /> Archive</Button>}
+                    {user.role === "ADMIN" && <Button size="sm" variant="ghost" className="ml-auto text-red-400 hover:text-red-300" onClick={() => setDeleting(c)}><Trash2 className="h-3.5 w-3.5" /> Delete</Button>}
                   </div>
                 )}
               </Card>
@@ -74,6 +77,12 @@ export function ClientsClient() {
           ))}
         </Stagger>
       )}
+      <DeleteDialog open={!!deleting} what="client" name={deleting?.name ?? ""} onClose={() => setDeleting(null)}
+        consequences="will be deleted with all its projects, tasks, files, feed posts and its client dashboard login."
+        onConfirm={async () => {
+          try { const r = await api<{ projects: number; tasks: number }>(`/api/clients/${deleting!.id}`, { method: "DELETE", body: { confirm: deleting!.name } }); toast.success(`${deleting!.name} deleted`, { description: `${r.projects} project(s) and ${r.tasks} task(s) removed.` }); setDeleting(null); reload(); }
+          catch (e) { toast.error(e instanceof Error ? e.message : "Delete failed"); }
+        }} />
       <ClientFormModal open={editing !== null} client={editing === "new" ? null : editing} onClose={() => setEditing(null)} onSaved={reload} />
       <ConfirmDialog open={!!archiving} danger title="Archive client?" confirmLabel="Archive" loading={busy}
         body={<>Archive <strong>{archiving?.name}</strong>? It will be hidden from lists but its projects and history are kept.</>}

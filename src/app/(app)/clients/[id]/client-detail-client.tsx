@@ -2,10 +2,12 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Ban, Briefcase, Lock, Mail, Pencil, Phone, Plus } from "lucide-react";
+import { ArrowLeft, Ban, Briefcase, Lock, Mail, Pencil, Phone, Plus, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { humanize } from "@/lib/constants";
-import { fmtDate } from "@/lib/client";
+import { api, fmtDate } from "@/lib/client";
 import { useApp } from "@/components/app-context";
+import { DeleteDialog } from "@/components/delete-dialog";
 import { useFetch } from "@/components/forms";
 import { Avatar, Badge, Button, Card, CardHeader, EmptyState, PageHeader, Skeleton } from "@/components/ui";
 import { ClientFormModal } from "../client-form";
@@ -24,6 +26,7 @@ export function ClientDetailClient({ id }: { id: string }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [newProject, setNewProject] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const { data: c, error, reload } = useFetch<Detail>(`/api/clients/${id}`);
   if (error) return <Card><EmptyState icon={<Ban className="h-6 w-6" />} title="Client unavailable" body={error} action={<Link href="/clients"><Button>Back</Button></Link>} /></Card>;
   if (!c) return <div className="space-y-4"><Skeleton className="h-10 w-1/3" /><Skeleton className="h-48" /></div>;
@@ -36,6 +39,7 @@ export function ClientDetailClient({ id }: { id: string }) {
         subtitle={<Badge color={CLIENT_STATUS_COLOR[c.status]} dot>{humanize(c.status)}</Badge>}
         actions={canEdit && <>
           <Button size="sm" onClick={() => setEditing(true)}><Pencil className="h-4 w-4" /> Edit</Button>
+          {user.role === "ADMIN" && <Button size="sm" variant="ghost" className="text-red-400 hover:text-red-300" onClick={() => setDeleting(true)}><Trash2 className="h-4 w-4" /> Delete</Button>}
           <Button size="sm" variant="primary" onClick={() => setNewProject(true)}><Plus className="h-4 w-4" /> New project</Button>
         </>} />
       <div className="grid gap-4 xl:grid-cols-3">
@@ -76,6 +80,12 @@ export function ClientDetailClient({ id }: { id: string }) {
         </Card>
       </div>
       <ClientFormModal open={editing} client={c} onClose={() => setEditing(false)} onSaved={reload} />
+      <DeleteDialog open={deleting} what="client" name={c.name} onClose={() => setDeleting(false)}
+        consequences={`will be deleted with its ${c.projects.length} project(s), all their tasks, files and feed posts, and its client dashboard login.`}
+        onConfirm={async () => {
+          try { await api(`/api/clients/${c.id}`, { method: "DELETE", body: { confirm: c.name } }); toast.success(`${c.name} deleted`); router.push("/clients"); }
+          catch (e) { toast.error(e instanceof Error ? e.message : "Delete failed"); }
+        }} />
       <ProjectFormModal open={newProject} defaultClientId={c.id} onClose={() => setNewProject(false)} onSaved={(p) => router.push(`/projects/${p.id}`)} />
     </div>
   );

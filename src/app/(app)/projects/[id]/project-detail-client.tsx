@@ -1,13 +1,15 @@
 "use client";
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Ban, Building2, CalendarDays, CheckCircle2, ClipboardList, Flame, ListTodo, Lock, Pencil, Plus } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, Ban, Building2, CalendarDays, CheckCircle2, ClipboardList, Flame, ListTodo, Lock, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { PROJECT_STATUSES, STATUS_META, humanize, type StatusKey } from "@/lib/constants";
 import { api, fmtDate } from "@/lib/client";
 import { isOverdue, taskRef } from "@/lib/utils";
 import type { TaskItem } from "@/lib/types";
 import { useApp } from "@/components/app-context";
+import { DeleteDialog } from "@/components/delete-dialog";
 import { useFetch } from "@/components/forms";
 import { FeedPanel } from "@/components/feed-panel";
 import { Avatar, Badge, Button, Card, CardHeader, EmptyState, OverdueBadge, PageHeader, PriorityBadge, Progress, Select, Skeleton, StatusBadge } from "@/components/ui";
@@ -25,6 +27,8 @@ type Project = ProjectInput & {
 export function ProjectDetailClient({ id }: { id: string }) {
   const { user, openTask, openCreate, dataVersion, isManager } = useApp();
   const [editing, setEditing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const router = useRouter();
   const project = useFetch<Project>(`/api/projects/${id}`);
   const tasks = useFetch<{ items: TaskItem[]; total: number }>(`/api/tasks?projectId=${id}&pageSize=300&sort=status&plans=1`, [dataVersion]);
   const canEdit = user.role === "ADMIN" || (user.role === "ACCOUNT_MANAGER" && project.data?.accountManagerId === user.id);
@@ -67,6 +71,7 @@ export function ProjectDetailClient({ id }: { id: string }) {
             </Select>
           ) : <Badge color={PROJECT_STATUS_COLOR[p.status]} dot>{humanize(p.status)}</Badge>}
           {canEdit && <Button size="sm" onClick={() => setEditing(true)}><Pencil className="h-4 w-4" /> Edit</Button>}
+          {user.role === "ADMIN" && <Button size="sm" variant="ghost" className="text-red-400 hover:text-red-300" onClick={() => setDeleting(true)}><Trash2 className="h-4 w-4" /> Delete</Button>}
           {isManager && <Button size="sm" variant="primary" onClick={() => openCreate({ projectId: p.id })}><Plus className="h-4 w-4" /> Add task</Button>}
         </>}
       />
@@ -138,6 +143,12 @@ export function ProjectDetailClient({ id }: { id: string }) {
           </Card>
         </div>
       </div>
+      <DeleteDialog open={deleting} what="project" name={p.name} onClose={() => setDeleting(false)}
+        consequences={`will be deleted with all its tasks (${stats.total}), their files and comments${p.kind === "SOCIAL_MEDIA" ? ", and its feed posts and images" : ""}.`}
+        onConfirm={async () => {
+          try { await api(`/api/projects/${p.id}`, { method: "DELETE", body: { confirm: p.name } }); toast.success(`${p.name} deleted`); router.push("/projects"); }
+          catch (e) { toast.error(e instanceof Error ? e.message : "Delete failed"); }
+        }} />
       <ProjectFormModal open={editing} onClose={() => setEditing(false)} onSaved={() => project.reload()} project={p} />
     </div>
   );
