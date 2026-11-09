@@ -9,7 +9,9 @@ import { useApp } from "./app-context";
 const first = (name: string) => name.split(" ")[0] ?? name;
 
 function staffSlides(name: string, role: string): Slide[] {
-  const hello: Slide = { eyebrow: "Welcome to LOG", title: `Hello, ${first(name)}`, body: "Lots of work. Lots of growth. This is where every task, deadline and deliverable of the agency lives. Here is your part of it, in under a minute.", accent: "#7c5cff" };
+  const hello: Slide = role === "EXTERNAL"
+    ? { eyebrow: "Welcome", title: `Hello, ${first(name)}`, body: "This is where your tasks arrive and where you plan when each one will be done. Here is how, in under a minute.", accent: "#7c5cff" }
+    : { eyebrow: "Welcome to LOG", title: `Hello, ${first(name)}`, body: "Lots of work. Lots of growth. This is where every task, deadline and deliverable of the agency lives. Here is your part of it, in under a minute.", accent: "#7c5cff" };
   const done: Slide = { eyebrow: "You're set", title: "Lights, camera, work", body: "Everything updates live for everyone. You can watch this again any time from Settings.", accent: "#ffb347" };
   const byRole: Record<string, Slide[]> = {
     ADMIN: [
@@ -34,7 +36,10 @@ function staffSlides(name: string, role: string): Slide[] {
     ],
   };
   byRole.PRODUCTION_MANAGER = byRole.PERFORMANCE_MANAGER!;
-  byRole.EXTERNAL = byRole.EMPLOYEE!;
+  byRole.EXTERNAL = [
+    { eyebrow: "01 · Your calendar", title: "Pick your finish day", body: "Every task given to you waits in “To plan”. Drag it onto the day you'll have it done — that date is shared straight away.", points: ["Drag it again to move the day", "A red flag marks each deadline"], accent: "#3ad7ff" },
+    { eyebrow: "02 · Do the work", title: "Open. Start. Submit.", body: "Open a task to start it, attach your files or links and submit. Social media tasks open their grid so you can place the posts.", accent: "#ff3d81" },
+  ];
   return [hello, ...(byRole[role] ?? byRole.EMPLOYEE!), done];
 }
 

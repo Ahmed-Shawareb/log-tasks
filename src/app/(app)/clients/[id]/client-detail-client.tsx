@@ -62,7 +62,8 @@ export function ClientDetailClient({ id }: { id: string }) {
         </Card>
         {user.role === "ADMIN" && <div className="xl:order-last"><PortalLoginCard clientId={c.id} login={c.portalLogin} onSaved={reload} personal={!!c.privateOwnerId} /></div>}
         <Card className="xl:col-span-2">
-          <CardHeader title="Projects" subtitle={`${c.projects.length} visible to you`} icon={<Briefcase className="h-4 w-4" />} />
+          <CardHeader title="Projects" subtitle={`${c.projects.length} visible to you`} icon={<Briefcase className="h-4 w-4" />}
+            action={c.projects.length > 0 && <Link href={`/projects?client=${c.id}`} className="text-xs text-accent-2 hover:underline">Open in Projects</Link>} />
           {c.projects.length === 0 ? <EmptyState icon={<Briefcase className="h-6 w-6" />} title="No projects yet" /> : (
             <ul className="divide-y divide-[var(--line)]">
               {c.projects.map((p) => (

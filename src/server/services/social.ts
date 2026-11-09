@@ -33,15 +33,23 @@ export async function syncPostSlots(tx: Tx, projectId: string, count: number) {
   }
 }
 
+/** Someone given a live task in the project (an external, a designer…) works on its feed through that task. */
+const workingOn = (actor: SessionUser, projectId: string) =>
+  db.task.count({ where: { projectId, assigneeId: actor.id, archivedAt: null, status: { notIn: ["APPROVED", "CANCELLED"] } } }).then((n) => n > 0);
+
 async function projectFor(actor: SessionUser, projectId: string) {
-  const p = await db.project.findFirst({ where: { AND: [{ id: projectId }, projectScope(actor)] }, select: { id: true, kind: true, accountManagerId: true, name: true } });
+  const sel = { id: true, kind: true, accountManagerId: true, name: true } as const;
+  let p = await db.project.findFirst({ where: { AND: [{ id: projectId }, projectScope(actor)] }, select: sel });
+  let assigned = false;
+  if (!p && (await workingOn(actor, projectId))) { p = await db.project.findUnique({ where: { id: projectId }, select: sel }); assigned = true; }
   if (!p) throw notFound("Project");
   if (p.kind !== "SOCIAL_MEDIA") throw invalid("This is not a social media project.");
-  return p;
+  return { ...p, assigned: assigned || (await workingOn(actor, projectId)) };
 }
 
 // The social media specialist publishes the posts, so they can also fill in links and dates.
-const canEditFeed = (actor: SessionUser, p: { accountManagerId: string | null }) => isAdmin(actor) || isSocialSpecialist(actor) || p.accountManagerId === actor.id;
+const canEditFeed = (actor: SessionUser, p: { accountManagerId: string | null; assigned?: boolean }) =>
+  isAdmin(actor) || isSocialSpecialist(actor) || p.accountManagerId === actor.id || !!p.assigned;
 
 export async function getFeed(actor: SessionUser, projectId: string) {
   const p = await projectFor(actor, projectId);
@@ -155,7 +163,7 @@ export async function readPostImage(who: { staff: SessionUser } | { clientId: st
     if (m.post.project.clientId !== who.clientId) throw notFound("Image");
   } else {
     const visible = await db.project.count({ where: { AND: [{ id: m.post.project.id }, projectScope(who.staff)] } });
-    if (!visible) throw notFound("Image");
+    if (!visible && !(await workingOn(who.staff, m.post.project.id))) throw notFound("Image");
   }
   return { media: m, bytes: await getObject(m.storageKey) };
 }

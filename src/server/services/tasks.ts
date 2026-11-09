@@ -10,7 +10,7 @@ import { activity, audit, notify } from "../audit";
 import { toSessionUser } from "../auth";
 import {
   canManageTask, canReviewTask, canUseDepartment, isAccountManager, isAdmin, isDeptManager, isManager, managerDeptKey,
-  notPlan, privateProjectGuard, SHARED_DEPARTMENTS, taskScope, type SessionUser,
+  canUseExternals, notPlan, privateProjectGuard, SHARED_DEPARTMENTS, taskScope, type SessionUser,
 } from "../permissions";
 import { checkAvailability, lockPerson } from "./availability";
 import { zonedParts } from "@/lib/time";
@@ -24,7 +24,7 @@ const personSelect = { id: true, name: true, avatarColor: true, email: true, rol
 export const taskListInclude = {
   assignee: { select: personSelect },
   reviewer: { select: personSelect },
-  project: { select: { id: true, name: true, color: true, accountManagerId: true, client: { select: { id: true, name: true } } } },
+  project: { select: { id: true, name: true, color: true, kind: true, accountManagerId: true, client: { select: { id: true, name: true } } } },
   department: { select: { id: true, key: true, name: true, color: true } },
   type: { select: { id: true, name: true, unit: true, unitPlural: true, icon: true, color: true, stages: true } },
   parent: { select: { id: true, number: true, title: true } },
@@ -181,7 +181,7 @@ export async function getTaskDetail(actor: SessionUser, idOrNumber: string) {
     include: {
       ...taskListInclude,
       creator: { select: personSelect },
-      project: { select: { id: true, name: true, color: true, accountManagerId: true, client: { select: { id: true, name: true } } } },
+      project: { select: { id: true, name: true, color: true, kind: true, accountManagerId: true, client: { select: { id: true, name: true } } } },
       children: { where: { archivedAt: null }, include: { assignee: { select: personSelect } }, orderBy: { number: "asc" } },
       dependencies: { include: { dependsOn: { select: { id: true, number: true, title: true, status: true, dueAt: true } } } },
       dependents: { include: { task: { select: { id: true, number: true, title: true, status: true } } } },
@@ -246,6 +246,7 @@ export async function assertAssignable(tx: Tx | typeof db, actor: SessionUser, a
   if (!a.isActive) throw invalid(`${a.name} is inactive and cannot receive new work.`);
   if (a.id === actor.id) return a;
   if (isWorkerRole(actor.role)) throw forbidden("Only managers can give work to others.");
+  if (a.role === "EXTERNAL" && !canUseExternals(actor)) throw forbidden(`${a.name} takes work from the founder only.`);
   if (isAccountManager(actor)) {
     if (!DOERS.includes(a.role)) throw forbidden("Account Managers give work to their team or to the Performance / Production teams.");
     const inMyTeam = a.role !== "EMPLOYEE" || SHARED_DEPARTMENTS.includes(a.department?.key ?? "")
@@ -962,6 +963,35 @@ export async function scheduleTask(actor: SessionUser, id: string, raw: unknown)
       }, actor.id);
     }
     return { ok: true, task: await tx.task.findUniqueOrThrow({ where: { id: task.id }, include: taskListInclude }) };
+  });
+}
+
+// ───────────────────────────── planned finish ─────────────────────────────
+
+export const planSchema = z.object({ plannedAt: z.string().datetime({ offset: true }).nullable() });
+
+/**
+ * The person doing a task puts it on a day of their own calendar: "I'll have it done by then". The people who gave
+ * it out (and review it) see that day and are told when it is set or moved. It never changes the deadline.
+ */
+export async function planTask(actor: SessionUser, id: string, raw: unknown) {
+  const { plannedAt } = planSchema.parse(raw);
+  return db.$transaction(async (tx) => {
+    const task = await loadForActor(tx, actor, id);
+    if (task.assigneeId !== actor.id && !canManageTask(actor, task)) throw forbidden("Only the person doing this task can plan it.");
+    if (CLOSED_STATUSES.includes(task.status as StatusKey)) throw invalid(`A ${statusLabel(task.status).toLowerCase()} task can't be planned.`);
+    const at = plannedAt ? new Date(plannedAt) : null;
+    await tx.task.update({ where: { id: task.id }, data: { plannedAt: at, version: { increment: 1 } } });
+    await activity(tx, actor.id, "task.planned", { taskId: task.id }, { plannedAt: at, from: task.plannedAt });
+    if (at) {
+      const late = task.dueAt && at > task.dueAt;
+      const when = at.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: process.env.APP_TIMEZONE ?? "Africa/Cairo" });
+      await notify(tx, [task.creatorId, task.reviewerId], {
+        type: "task.planned", title: `${actor.name} plans to finish ${taskRef(task.number)} on ${when}${late ? " — after the deadline" : ""}`,
+        body: task.title, taskId: task.id, link: link(task.number), dedupeKey: `plan:${task.id}:${at.toISOString()}`,
+      }, actor.id);
+    }
+    return { ok: true, plannedAt: at, afterDeadline: !!(at && task.dueAt && at > task.dueAt) };
   });
 }
 

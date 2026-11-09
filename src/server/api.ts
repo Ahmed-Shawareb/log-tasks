@@ -44,6 +44,10 @@ type Ctx<P> = { params: Promise<P> };
 
 const ALLOWED_BEFORE_PASSWORD_CHANGE = ["/api/auth/", "/api/me", "/api/notifications"];
 
+/** Externals reach only their own work: tasks, their files and checklists, and the feed of a project they work on. */
+const EXTERNAL_ALLOWED = ["/api/auth/", "/api/me", "/api/notifications", "/api/tasks", "/api/checklist", "/api/attachments", "/api/timer", "/api/task-types", "/api/feed-images", "/api/users"];
+const externalMay = (path: string) => EXTERNAL_ALLOWED.some((p) => path.startsWith(p)) || /^\/api\/projects\/[^/]+\/posts(\/|$)/.test(path);
+
 /** Authenticated route handler: CSRF check, session, consistent error shape. */
 export function route<P = Record<string, string>>(
   fn: (args: { req: NextRequest; user: SessionUser; params: P }) => Promise<unknown>,
@@ -56,6 +60,7 @@ export function route<P = Record<string, string>>(
       if (user.mustChangePassword && !ALLOWED_BEFORE_PASSWORD_CHANGE.some((p) => req.nextUrl.pathname.startsWith(p))) {
         throw new AppError("FORBIDDEN", "Choose your own password first (Settings → Password).");
       }
+      if (user.role === "EXTERNAL" && !externalMay(req.nextUrl.pathname)) throw new AppError("NOT_FOUND", "Not found.");
       const params = ctx?.params ? await ctx.params : ({} as P);
       const out = await fn({ req, user, params });
       if (out instanceof Response) return out;
