@@ -23,6 +23,8 @@ const NAV: { section: string; items: NavItem[] }[] = [
     items: [
       // Externals have one page: their own calendar.
       { href: "/my-calendar", label: "My calendar", icon: CalendarDays, roles: ["EXTERNAL"] },
+      { href: "/my-tasks", label: "Tasks", icon: ClipboardList, roles: ["EXTERNAL"] },
+      { href: "/my-grids", label: "Grids", icon: LayoutGrid, roles: ["EXTERNAL"] },
       { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, notFor: ["EXTERNAL"] },
       { href: "/calendar", label: "Calendar & planner", icon: CalendarDays, notFor: ["EXTERNAL"] },
       { href: "/board", label: "Board", icon: KanbanSquare, notFor: ["EXTERNAL"] },

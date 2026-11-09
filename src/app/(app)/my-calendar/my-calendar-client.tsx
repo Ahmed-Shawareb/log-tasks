@@ -9,7 +9,7 @@ import type { TaskItem } from "@/lib/types";
 import { useApp } from "@/components/app-context";
 import { useDragSensors } from "@/components/drag-sensors";
 import { FeedPanel } from "@/components/feed-panel";
-import { Button, Card, EmptyState, Modal, PageHeader, Skeleton, StatusBadge } from "@/components/ui";
+import { Button, Card, EmptyState, Field, Input, Modal, PageHeader, Select, Skeleton, StatusBadge } from "@/components/ui";
 
 // An external's whole view of the system: their tasks on a month calendar. Drag a task onto the day you'll have
 // it done — the founder sees that day. Social media tasks open their feed grid to fill in.
@@ -17,6 +17,13 @@ import { Button, Card, EmptyState, Modal, PageHeader, Skeleton, StatusBadge } fr
 const OPEN = "BACKLOG,READY,SCHEDULED,IN_PROGRESS,CHANGES_REQUESTED,BLOCKED,ON_HOLD,SUBMITTED";
 const key = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const sameDay = (a: Date, b: Date) => key(a) === key(b);
+const steps = (t: TaskItem) => (t.stage === null && t.quantity !== null ? t.type?.stages ?? [] : []);
+/** A counted task already split into parts: the parts are on the calendar, the task itself only shows what's left. */
+const isSplit = (t: TaskItem) => t.quantity !== null && t._count.children > 0;
+const leftOf = (t: TaskItem) => (t.quantity === null ? 0 : t.remaining ?? t.quantity);
+/** What's still to plan, in words: "6 left" or, for a task with steps, "Script writing 6 · Filming 10 · Editing 10". */
+export const leftLabel = (t: TaskItem) =>
+  t.stageRemaining && t.type?.stages?.length ? t.type.stages.map((n, k) => `${n} ${t.stageRemaining![k]}`).join(" · ") + " left" : `${t.remaining ?? 0} left to plan`;
 
 function TaskChip({ t, onOpen, onGrid, compact }: { t: TaskItem; onOpen: () => void; onGrid: () => void; compact?: boolean }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: t.id, data: { t } });
@@ -30,6 +37,7 @@ function TaskChip({ t, onOpen, onGrid, compact }: { t: TaskItem; onOpen: () => v
       <button type="button" onClick={onOpen} className="block w-full text-left">
         <div className="truncate font-medium text-fg">{t.title}</div>
         {!compact && <div className="truncate text-[10px] text-muted">{t.project?.client.name ?? taskRef(t.number)}</div>}
+        {!compact && t.quantity !== null && t._count.children > 0 && <div className="text-[10px] font-semibold text-accent-2">{leftLabel(t)}</div>}
         {t.dueAt && <div className={cn("text-[10px]", late ? "text-red-400" : "text-muted")}><Flag className="mr-0.5 inline h-2.5 w-2.5" />due {fmtDate(t.dueAt)}{late ? " · planned after it" : ""}</div>}
       </button>
       {social && <button type="button" onClick={onGrid} className="mt-1 inline-flex items-center gap-1 rounded-md bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold text-accent-2"><LayoutGrid className="h-3 w-3" /> Open the grid</button>}
@@ -68,10 +76,11 @@ export function MyCalendarClient() {
   const [month, setMonth] = useState(() => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d; });
   const [drag, setDrag] = useState<TaskItem | null>(null);
   const [grid, setGrid] = useState<TaskItem | null>(null);
+  const [part, setPart] = useState<{ t: TaskItem; day: string } | null>(null);
 
   const load = useCallback(() => {
-    api<{ items: TaskItem[] }>(`/api/tasks${qs({ assigneeId: user.id, status: OPEN, pageSize: 200, sort: "due" })}`)
-      .then((r) => setItems(r.items)).catch((e) => toast.error(e instanceof Error ? e.message : "Could not load your tasks"));
+    api<{ items: TaskItem[] }>(`/api/tasks${qs({ assigneeId: user.id, status: OPEN, pageSize: 200, sort: "due", plans: "1" })}`)
+      .then((r) => setItems(r.items.filter((t) => !(isSplit(t) && leftOf(t) === 0)))) // fully split: only its parts show.catch((e) => toast.error(e instanceof Error ? e.message : "Could not load your tasks"));
   }, [user.id]);
   useEffect(() => { load(); }, [load, dataVersion]);
 
@@ -82,11 +91,11 @@ export function MyCalendarClient() {
   }, [month]);
   const byDay = useMemo(() => {
     const m = new Map<string, TaskItem[]>();
-    for (const t of items ?? []) if (t.plannedAt) m.set(key(new Date(t.plannedAt)), [...(m.get(key(new Date(t.plannedAt))) ?? []), t]);
+    for (const t of items ?? []) if (t.plannedAt && !isSplit(t)) m.set(key(new Date(t.plannedAt)), [...(m.get(key(new Date(t.plannedAt))) ?? []), t]);
     return m;
   }, [items]);
   const deadlines = useMemo(() => new Set((items ?? []).filter((t) => t.dueAt).map((t) => key(new Date(t.dueAt!)))), [items]);
-  const unplanned = (items ?? []).filter((t) => !t.plannedAt);
+  const unplanned = (items ?? []).filter((t) => !t.plannedAt || isSplit(t));
 
   async function plan(t: TaskItem, day: string | null) {
     const at = day ? new Date(`${day}T17:00:00`) : null;
@@ -104,6 +113,8 @@ export function MyCalendarClient() {
     const id = String(e.over.id);
     if (id === "unplanned") { if (t.plannedAt) plan(t, null); return; }
     const day = id.split("|")[1]!;
+    // A number of things (e.g. 10 videos): ask whether all of it is done that day, or only part.
+    if (t.quantity !== null && (leftOf(t) > 1 || steps(t).length > 0)) { setPart({ t, day }); return; }
     if (!t.plannedAt || key(new Date(t.plannedAt)) !== day) plan(t, day);
   }
 
@@ -163,9 +174,64 @@ export function MyCalendarClient() {
           </DragOverlay>
         </DndContext>
       )}
+      <PartDialog part={part} userId={user.id} onClose={() => setPart(null)} onDone={() => { setPart(null); load(); }} planWhole={(t, day) => { setPart(null); plan(t, day); }} />
       <Modal open={!!grid} onClose={() => setGrid(null)} size="xl" title={grid?.project?.name ?? "Grid"} subtitle={grid?.title}>
         {grid?.project && <FeedPanel projectId={grid.project.id} projectName={grid.project.name} postCount={null} />}
       </Modal>
     </div>
   );
 }
+
+/** "All of it, or part?" — planning a counted task on a day. Part splits it into a piece for that day. */
+function PartDialog({ part, userId, onClose, onDone, planWhole }: {
+  part: { t: TaskItem; day: string } | null; userId: string; onClose: () => void; onDone: () => void; planWhole: (t: TaskItem, day: string) => void;
+}) {
+  const t = part?.t;
+  const st = t ? steps(t) : [];
+  const [stage, setStage] = useState(0);
+  const left = !t ? 0 : st.length ? t.stageRemaining?.[stage] ?? t.quantity ?? 0 : leftOf(t);
+  const [n, setN] = useState(1);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { if (t) { setStage(0); setN(st.length ? t.stageRemaining?.[0] ?? t.quantity ?? 1 : leftOf(t)); } }, [t]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!t || !part) return null;
+  const unit = (k: number) => (k === 1 ? t.type?.unit : t.type?.unitPlural) ?? (k === 1 ? "item" : "items");
+  const dayLabel = new Date(`${part.day}T12:00:00`).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
+  const confirm = async (qty: number) => {
+    // The whole task, never split before: just put it on the day.
+    if (!st.length && qty === t.quantity && !t._count.children) return planWhole(t, part.day);
+    setBusy(true);
+    try {
+      await api(`/api/tasks/${t.id}/distribute`, { body: { allocations: [{ assigneeId: userId, quantity: qty, ...(st.length ? { stage } : {}), plannedAt: new Date(`${part.day}T17:00:00`).toISOString() }] } });
+      toast.success(`${qty} ${unit(qty)} planned for ${dayLabel}`, { description: qty < left ? `${left - qty} left to plan.` : "All of it is planned." });
+      onDone();
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Could not plan it"); }
+    finally { setBusy(false); }
+  };
+  return (
+    <Modal open onClose={onClose} size="sm" title={`Plan for ${dayLabel}`} subtitle={t.title}
+      footer={<>
+        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button disabled={busy || !left} onClick={() => confirm(left)}>All {left}</Button>
+        <Button variant="primary" loading={busy} disabled={!left || n < 1 || n > left} onClick={() => confirm(n)}>Plan {n}</Button>
+      </>}>
+      <div className="space-y-4">
+        {st.length > 0 && (
+          <Field label="Which step?">
+            <Select value={stage} onChange={(e) => { const k = Number(e.target.value); setStage(k); setN(t.stageRemaining?.[k] ?? t.quantity ?? 1); }}>
+              {st.map((name, k) => <option key={name} value={k}>{name} · {t.stageRemaining?.[k] ?? t.quantity} left</option>)}
+            </Select>
+          </Field>
+        )}
+        <Field label={`How many ${unit(2)} will you finish that day?`} hint={`${left} ${unit(left)} left to plan. The rest stays in “To plan”.`}>
+          <div className="flex items-center gap-2">
+            <Button type="button" size="icon" onClick={() => setN((x) => Math.max(1, x - 1))} aria-label="Fewer">−</Button>
+            <Input type="number" min={1} max={left} value={n} onChange={(e) => setN(Math.max(1, Math.min(left, Number(e.target.value) || 1)))} className="w-24 text-center font-display text-xl font-bold" aria-label="How many" />
+            <Button type="button" size="icon" onClick={() => setN((x) => Math.min(left, x + 1))} aria-label="More">+</Button>
+            <span className="text-sm text-muted">of {left}</span>
+          </div>
+        </Field>
+      </div>
+    </Modal>
+  );
+}
+

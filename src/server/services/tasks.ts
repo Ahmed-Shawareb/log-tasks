@@ -476,6 +476,8 @@ export const distributeSchema = z.object({
     /** Which step of a staged task this part is (index into type.stages). */
     stage: z.number().int().min(0).max(20).optional().nullable(),
     dueAt: dateish,
+    /** Splitting your own work: the day you plan to finish this part. */
+    plannedAt: dateish,
     note: z.string().max(2000).optional().nullable(),
   })).min(1, "Choose at least one person").max(30),
 });
@@ -493,8 +495,11 @@ export async function distributeTask(actor: SessionUser, id: string, raw: unknow
       where: { id: perm.id },
       include: { type: true, project: { select: { name: true, client: { select: { name: true } } } }, children: { where: { archivedAt: null, status: { not: "CANCELLED" } }, select: { quantity: true, stage: true } } },
     });
-    const responsible = task.assigneeId === actor.id && isManager(actor);
+    // Anyone may split their own counted work into parts for themselves (e.g. an external doing 10 videos on two days).
+    const selfSplit = task.assigneeId === actor.id && input.allocations.every((a) => a.assigneeId === actor.id);
+    const responsible = (task.assigneeId === actor.id && isManager(actor)) || selfSplit;
     if (!responsible && !canManageTask(actor, perm)) throw forbidden("Only the person responsible for this task can split it.");
+    if (selfSplit && task.quantity === null) throw invalid("Only a task with a number (e.g. 10 videos) can be split into parts.");
     if (CLOSED_STATUSES.includes(task.status as StatusKey)) throw invalid("This task is already closed.");
 
     const counted = task.quantity !== null;
@@ -540,7 +545,7 @@ export async function distributeTask(actor: SessionUser, id: string, raw: unknow
           description: al.note || task.description, typeId: task.typeId, quantity: qty, stage,
           projectId: task.projectId, parentId: task.id, departmentId: departmentFor(a) ?? task.departmentId,
           creatorId: actor.id, assigneeId: a.id, reviewerId: a.id === actor.id ? task.reviewerId : actor.id, privateOwnerId: task.privateOwnerId,
-          priority: task.priority, status: "READY", dueAt, labels: task.labels,
+          priority: task.priority, status: "READY", dueAt, labels: task.labels, plannedAt: toDate(al.plannedAt) ?? null,
         },
       });
       await tx.handoff.create({ data: { taskId: child.id, toUserId: a.id, byUserId: actor.id, note: al.note || `Part of ${taskRef(task.number)}` } });
@@ -553,6 +558,15 @@ export async function distributeTask(actor: SessionUser, id: string, raw: unknow
       created.push({ ...child, assigneeName: a.name });
     }
     if (staged || isStep) await assertStageOrder(tx, rootId);
+    // Planned parts: the people who gave the work out see the days.
+    const planned = created.filter((c) => c.plannedAt);
+    if (selfSplit && planned.length) {
+      const when = (d: Date) => d.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: process.env.APP_TIMEZONE ?? "Africa/Cairo" });
+      await notify(tx, [task.creatorId, task.reviewerId], {
+        type: "task.planned", title: `${actor.name} planned ${taskRef(task.number)}: ${planned.map((c) => `${c.quantity} on ${when(c.plannedAt!)}`).join(", ")}`,
+        body: task.title, taskId: task.id, link: link(task.number),
+      }, actor.id);
+    }
 
     await activity(tx, actor.id, "task.distributed", { taskId: task.id }, { parts: created.map((c) => ({ to: c.assigneeName, quantity: c.quantity, stage: c.stage })) });
     await tx.task.update({

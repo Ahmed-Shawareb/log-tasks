@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { db } from "@/lib/db";
 import { hashPassword, toSessionUser } from "@/server/auth";
 import { createClient, createProject } from "@/server/services/clients";
-import { createTask, listTasks, planTask } from "@/server/services/tasks";
+import { createTask, distributeTask, listTasks, planTask } from "@/server/services/tasks";
 import { createUser, eligibleAssignees, listPeople } from "@/server/services/org";
 import { getFeed, updatePost } from "@/server/services/social";
 import { workloadBoard } from "@/server/services/planning";
@@ -52,5 +52,21 @@ describe("externals work for the founder only", () => {
     expect(feed.canEdit).toBe(true);
     await updatePost(s.ext, project.id, feed.posts[0]!.id, { link: "https://instagram.com/p/ext" });
     await expectError(getFeed(s.ext, other.id), "NOT_FOUND");
+  });
+
+  it("an external splits a counted task across days: part on one day, the rest on another", async () => {
+    const s = await setup();
+    const type = await db.taskType.findUniqueOrThrow({ where: { name: "Test videos" } }).catch(() => null)
+      ?? await db.taskType.create({ data: { name: `Ext videos ${Date.now()}`, unit: "video", unitPlural: "videos" } });
+    const t = await createTask(s.founder, { typeId: type.id, quantity: 10, title: "10 videos for the external", assigneeId: s.ext.id, dueAt: day(25) });
+    const a = await distributeTask(s.ext, t.id, { allocations: [{ assigneeId: s.ext.id, quantity: 4, plannedAt: day(13) }] });
+    expect(a.remaining).toBe(6);
+    expect(a.created[0]!.plannedAt?.toISOString()).toBe(day(13));
+    expect(a.created[0]!.assigneeId).toBe(s.ext.id);
+    const b = await distributeTask(s.ext, t.id, { allocations: [{ assigneeId: s.ext.id, quantity: 6, plannedAt: day(16) }] });
+    expect(b.remaining).toBe(0);
+    expect(await db.notification.count({ where: { userId: s.founder.id, type: "task.planned", taskId: t.id } })).toBe(2);
+    // ...but they can't hand any of it to someone else.
+    await expectError(distributeTask(s.ext, t.id, { allocations: [{ assigneeId: s.founder.id, quantity: 1 }] }), "FORBIDDEN");
   });
 });

@@ -13,8 +13,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // Signed in with a one-time / shared password: nowhere else until they pick their own.
   const path = (await headers()).get("x-pathname") ?? "";
   if (user.mustChangePassword && !path.startsWith("/settings")) redirect("/settings?changePassword=1");
-  // Externals see nothing of the agency: only their own calendar (and their settings).
-  if (user.role === "EXTERNAL" && !path.startsWith("/my-calendar") && !path.startsWith("/settings")) redirect("/my-calendar");
+  // Externals see nothing of the agency: only their own calendar, tasks and grids (and their settings).
+  if (user.role === "EXTERNAL" && !/^\/(my-calendar|my-tasks|my-grids|settings)(\/|$)/.test(path)) redirect("/my-calendar");
   return (
     <AppProvider user={user}>
       <Aurora />
