@@ -1,7 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { forbidden, notFound } from "../errors";
+import { forbidden, invalid, notFound } from "../errors";
 import { audit } from "../audit";
 import { isAdmin, type SessionUser } from "../permissions";
 
@@ -24,6 +24,9 @@ export async function saveTaskType(actor: SessionUser, raw: unknown, id?: string
   if (!isAdmin(actor)) throw forbidden("Only administrators manage task types.");
   const input = taskTypeSchema.parse(raw);
   const unit = input.unit?.trim() || null;
+  // Steps are given out unit by unit, so a type with steps needs a counter.
+  if (input.stages?.length && !unit) throw invalid("Steps need a counter: say what is counted (e.g. reel) or remove the steps.");
+  if (input.stages && new Set(input.stages.map((x) => x.toLowerCase())).size !== input.stages.length) throw invalid("Each step needs a different name.");
   const data = { ...input, unit, unitPlural: unit ? input.unitPlural?.trim() || `${unit}s` : null };
   if (id) {
     if (!(await db.taskType.findUnique({ where: { id } }))) throw notFound("Task type");
