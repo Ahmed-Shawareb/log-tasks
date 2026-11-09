@@ -1,10 +1,12 @@
 import "server-only";
 import { z } from "zod";
+import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { forbidden, invalid, notFound } from "../errors";
 import { audit, activity, notify } from "../audit";
 import { isWorkerRole } from "@/lib/constants";
 import { MAX_POSTS, syncPostSlots } from "./social";
+import { deleteObject } from "./files";
 import { clientScope, isAccountManager, isAdmin, notPlan, projectScope, taskScope, type SessionUser } from "../permissions";
 
 const canEditClients = (u: SessionUser) => isAdmin(u) || isAccountManager(u);
@@ -207,3 +209,52 @@ export async function updateProject(actor: SessionUser, id: string, raw: unknown
   await audit(actor, input.status === "ARCHIVED" ? "project.archive" : "project.update", "Project", id, { before, after: input });
   return p;
 }
+
+// ───────────────────────────── permanent delete ─────────────────────────────
+
+/**
+ * Deletes projects for good: their tasks (with comments, files, submissions, history), feed posts and images.
+ * Files in storage are removed after the database commit. Returns how many tasks were removed.
+ */
+async function purgeProjects(projectIds: string[], extra?: (tx: Prisma.TransactionClient) => Promise<unknown>) {
+  const files: string[] = [];
+  const removed = await db.$transaction(async (tx) => {
+    const tasks = (await tx.task.findMany({ where: { projectId: { in: projectIds } }, select: { id: true } })).map((t) => t.id);
+    files.push(...(await tx.attachment.findMany({ where: { taskId: { in: tasks } }, select: { storageKey: true } })).map((a) => a.storageKey));
+    files.push(...(await tx.socialMedia.findMany({ where: { post: { projectId: { in: projectIds } } }, select: { storageKey: true } })).map((m) => m.storageKey));
+    // Subtasks point at their parent; untie them first so every task can go in one statement.
+    await tx.task.updateMany({ where: { OR: [{ id: { in: tasks } }, { parentId: { in: tasks } }] }, data: { parentId: null } });
+    await tx.attachment.deleteMany({ where: { taskId: { in: tasks } } });
+    await tx.task.deleteMany({ where: { id: { in: tasks } } });
+    await tx.project.deleteMany({ where: { id: { in: projectIds } } }); // posts and their images cascade
+    await extra?.(tx);
+    return tasks.length;
+  }, { timeout: 60_000 });
+  for (const key of files) await deleteObject(key);
+  return removed;
+}
+
+const confirmSchema = z.object({ confirm: z.string() });
+const canDelete = (actor: SessionUser) => isAdmin(actor);
+
+export async function deleteProject(actor: SessionUser, id: string, raw: unknown) {
+  if (!canDelete(actor)) throw forbidden("Only administrators can delete projects.");
+  const p = await db.project.findFirst({ where: { AND: [{ id }, projectScope(actor)] }, include: { client: { select: { name: true } } } });
+  if (!p) throw notFound("Project");
+  if (confirmSchema.parse(raw).confirm.trim() !== p.name.trim()) throw invalid("Type the project's name exactly to confirm.");
+  const tasks = await purgeProjects([p.id]);
+  // Personal work leaves no trace in the shared audit log.
+  if (!p.privateOwnerId) await audit(actor, "project.delete", "Project", p.id, { before: { name: p.name, client: p.client.name, tasks } });
+  return { ok: true, tasks };
+}
+
+export async function deleteClient(actor: SessionUser, id: string, raw: unknown) {
+  if (!canDelete(actor)) throw forbidden("Only administrators can delete clients.");
+  const c = await db.client.findFirst({ where: { AND: [{ id }, clientScope(actor)] }, include: { projects: { select: { id: true } } } });
+  if (!c) throw notFound("Client");
+  if (confirmSchema.parse(raw).confirm.trim() !== c.name.trim()) throw invalid("Type the client's name exactly to confirm.");
+  const tasks = await purgeProjects(c.projects.map((p) => p.id), (tx) => tx.client.delete({ where: { id: c.id } })); // its dashboard login cascades
+  if (!c.privateOwnerId) await audit(actor, "client.delete", "Client", c.id, { before: { name: c.name, projects: c.projects.length, tasks } });
+  return { ok: true, projects: c.projects.length, tasks };
+}
+
