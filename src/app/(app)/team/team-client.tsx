@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DndContext, DragOverlay, pointerWithin, rectIntersection, useDraggable, useDroppable, type CollisionDetection, type DragEndEvent } from "@dnd-kit/core";
 import { motion } from "motion/react";
-import { ArrowLeftRight, ChevronLeft, ChevronRight, Flag, Plane } from "lucide-react";
+import { ArrowLeftRight, CalendarCheck, ChevronLeft, ChevronRight, Flag, Plane } from "lucide-react";
 import { toast } from "sonner";
 import { DEPARTMENTS, PRIORITY_META, STATUS_META, type PriorityKey, type StatusKey } from "@/lib/constants";
 import { api, fmtTime, qs } from "@/lib/client";
@@ -26,7 +26,7 @@ const dropUnderPointer: CollisionDetection = (args) => { const hits = pointerWit
 const isoDow = (d: Date) => ((d.getDay() + 6) % 7) + 1;
 const sameDay = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 
-function Chip({ task, kind, onOpen }: { task: TaskItem; kind: "block" | "deadline" | "floating"; onOpen: () => void }) {
+function Chip({ task, kind, onOpen }: { task: TaskItem; kind: "block" | "deadline" | "floating" | "planned"; onOpen: () => void }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `${kind}:${task.id}`, data: { task, kind } });
   const s = STATUS_META[task.status as StatusKey];
   const step = task.stage !== null && task.stage !== undefined ? task.type?.stages?.[task.stage] : null;
@@ -46,14 +46,15 @@ function Chip({ task, kind, onOpen }: { task: TaskItem; kind: "block" | "deadlin
   return (
     <div ref={setNodeRef} {...attributes} {...listeners} onClick={onOpen}
       className={cn("group cursor-grab touch-manipulation select-none rounded-lg border px-2 py-1 text-[11px] leading-tight transition hover:-translate-y-px hover:shadow-glow active:cursor-grabbing", isDragging && "opacity-30",
-        kind === "deadline" ? "border-dashed border-red-400/60 bg-red-500/5" : "border-transparent")}
-      style={kind !== "deadline" ? { background: `color-mix(in srgb, ${s.color} 26%, var(--panel-solid))`, borderLeft: `3px solid ${PRIORITY_META[task.priority as PriorityKey].color}` } : undefined}
+        kind === "deadline" ? "border-dashed border-red-400/60 bg-red-500/5" : kind === "planned" ? "border-dashed border-sky-400/60 bg-sky-500/10" : "border-transparent")}
+      style={kind !== "deadline" && kind !== "planned" ? { background: `color-mix(in srgb, ${s.color} 26%, var(--panel-solid))`, borderLeft: `3px solid ${PRIORITY_META[task.priority as PriorityKey].color}` } : undefined}
       title={`${taskRef(task.number)} · ${task.title} · ${s.label}`}>
       <div className="flex items-center gap-1 text-[10px] text-muted">
-        {kind === "deadline" ? <Flag className="h-2.5 w-2.5 text-red-400" /> : null}
+        {kind === "deadline" ? <Flag className="h-2.5 w-2.5 text-red-400" /> : kind === "planned" ? <CalendarCheck className="h-2.5 w-2.5 text-sky-400" /> : null}
         <span className="font-mono">{taskRef(task.number)}</span>
         {kind === "block" && task.scheduledStart && <span>· {fmtTime(task.scheduledStart)}</span>}
         {kind === "deadline" && task.dueAt && <span>· due {fmtTime(task.dueAt)}</span>}
+        {kind === "planned" && <span className={cn(task.dueAt && task.plannedAt && new Date(task.plannedAt) > new Date(task.dueAt) && "text-red-400")}>· planned{task.dueAt ? ` · due ${new Date(task.dueAt).toLocaleDateString(undefined, { day: "numeric", month: "short" })}` : ""}</span>}
       </div>
       <div className={cn("truncate font-medium text-fg", isOverdue(task) && "text-red-300")}>{task.title}</div>
     </div>
@@ -96,7 +97,7 @@ function PersonHeader({ p, open, booked }: { p: Person; open: number; booked: nu
 export function TeamClient() {
   const { openTask, dataVersion, invalidate, user } = useApp();
   const projects = useProjects();
-  const [days, setDays] = useState<"7" | "14">("14");
+  const [days, setDays] = useState<"7" | "14" | "30">("14");
   // Flipped: days down the side, people across the top.
   const [flip, setFlip] = useState(false);
   useEffect(() => { try { setFlip(localStorage.getItem("log-planner-flip") === "1"); } catch {} }, []);
@@ -122,16 +123,18 @@ export function TeamClient() {
   const dayList = useMemo(() => Array.from({ length: Number(days) }, (_, i) => new Date(start.getTime() + i * DAY_MS)), [start, days]);
 
   const cellData = useMemo(() => {
-    const m = new Map<string, { blocks: TaskItem[]; deadlines: TaskItem[]; load: number }>();
+    const m = new Map<string, { blocks: TaskItem[]; deadlines: TaskItem[]; planned: TaskItem[]; load: number }>();
     for (const t of board?.tasks ?? []) {
       if (!t.assigneeId) continue;
       dayList.forEach((d, i) => {
         const key = `${t.assigneeId}|${i}`;
-        const c = m.get(key) ?? { blocks: [], deadlines: [], load: 0 };
+        const c = m.get(key) ?? { blocks: [], deadlines: [], planned: [], load: 0 };
         if (t.scheduledStart && sameDay(new Date(t.scheduledStart), d)) {
           c.blocks.push(t);
           c.load += (new Date(t.scheduledEnd!).getTime() - new Date(t.scheduledStart).getTime()) / 60_000;
-        } else if (!t.scheduledStart && t.dueAt && sameDay(new Date(t.dueAt), d) && !["APPROVED", "CANCELLED"].includes(t.status)) c.deadlines.push(t);
+        } else if (!t.scheduledStart && t.plannedAt && sameDay(new Date(t.plannedAt), d) && !["APPROVED", "CANCELLED"].includes(t.status)) {
+          c.planned.push(t); // the day the person said they'll have it done (externals plan on their own calendar)
+        } else if (!t.scheduledStart && !t.plannedAt && t.dueAt && sameDay(new Date(t.dueAt), d) && !["APPROVED", "CANCELLED"].includes(t.status)) c.deadlines.push(t);
         m.set(key, c);
       });
     }
@@ -148,6 +151,12 @@ export function TeamClient() {
   async function place(task: TaskItem, personId: string, day: Date, kind: string) {
     const person = board!.people.find((p) => p.id === personId)!;
     if (kind === "deadline") return moveDeadline(task, person, day);
+    if (kind === "planned") {
+      if (person.id !== task.assigneeId) return handTo(task, person.id);
+      try { await api(`/api/tasks/${task.id}/plan`, { body: { plannedAt: new Date(new Date(day).setHours(17, 0, 0, 0)).toISOString() } }); toast.success(`${taskRef(task.number)} planned day moved`); invalidate(); }
+      catch (err) { toast.error(err instanceof Error ? err.message : "Could not move the planned day"); }
+      return;
+    }
     const prevStart = task.scheduledStart ? new Date(task.scheduledStart) : null;
     const duration = task.scheduledStart && task.scheduledEnd ? new Date(task.scheduledEnd).getTime() - new Date(task.scheduledStart).getTime() : (task.estimateMinutes || 120) * 60_000;
     const s = new Date(day);
@@ -235,7 +244,7 @@ export function TeamClient() {
       <PageHeader eyebrow="Plan" title="Team planner" subtitle="Drag a step from the slider onto a person's day to give it out. Every step has to come after the one before it."
         actions={<>
           <Button size="sm" onClick={toggleFlip} title="Swap rows and columns"><ArrowLeftRight className="h-4 w-4" /> {flip ? "People across" : "Days across"}</Button>
-          <Segmented options={[{ key: "7", label: "1 week" }, { key: "14", label: "2 weeks" }]} value={days} onChange={setDays} />
+          <Segmented options={[{ key: "7", label: "1 week" }, { key: "14", label: "2 weeks" }, { key: "30", label: "1 month" }]} value={days} onChange={setDays} />
         </>} />
 
       <div className="glass flex flex-wrap items-center gap-2 rounded-2xl p-2">
@@ -279,6 +288,7 @@ export function TeamClient() {
                             <Cell id={`${p.id}|${i}`} off={off} leave={lv ? lv.type.toLowerCase() : undefined} load={c?.load ?? 0} cap={off ? 0 : p.workEndMin - p.workStartMin} today={sameDay(d, today)}>
                               {c?.blocks.map((t) => <Chip key={t.id} task={t} kind="block" onOpen={() => openTask(t.id)} />)}
                               {c?.deadlines.map((t) => <Chip key={t.id} task={t} kind="deadline" onOpen={() => openTask(t.id)} />)}
+                              {c?.planned.map((t) => <Chip key={t.id} task={t} kind="planned" onOpen={() => openTask(t.id)} />)}
                             </Cell>
                           </div>
                         );
@@ -317,6 +327,7 @@ export function TeamClient() {
                               <Cell id={`${p.id}|${i}`} off={off} leave={lv ? lv.type.toLowerCase() : undefined} load={c?.load ?? 0} cap={cap} today={sameDay(d, today)}>
                                 {c?.blocks.map((t) => <Chip key={t.id} task={t} kind="block" onOpen={() => openTask(t.id)} />)}
                                 {c?.deadlines.map((t) => <Chip key={t.id} task={t} kind="deadline" onOpen={() => openTask(t.id)} />)}
+                                {c?.planned.map((t) => <Chip key={t.id} task={t} kind="planned" onOpen={() => openTask(t.id)} />)}
                               </Cell>
                             </div>
                           );

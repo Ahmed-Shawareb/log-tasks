@@ -366,6 +366,7 @@ model Task {
   quantity        Int? // e.g. 60 videos — split between people with "distribute"
   stage           Int? // index into type.stages when this task is one step of a staged task
   privateOwnerId  String? // copied from the project/parent: private work, hidden from everyone but the owner and its assignee
+  plannedAt       DateTime? // the day the assignee (e.g. an external) plans to finish it — set on their own calendar
   labels          String[]   @default([])
   position        Float      @default(0)
   completedAt     DateTime?

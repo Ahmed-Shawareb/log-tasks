@@ -3,7 +3,7 @@ import { route } from "@/server/api";
 import { notFound } from "@/server/errors";
 import {
   addChecklistItem, addComment, addDependency, archiveTask, changeStatus, distributeTask, duplicateTask, logTime, removeDependency,
-  reviewTask, scheduleTask, startTimer, submitWork,
+  planTask, reviewTask, scheduleTask, startTimer, submitWork,
 } from "@/server/services/tasks";
 import { uploadAttachment } from "@/server/services/files";
 
@@ -18,6 +18,7 @@ export const POST = route<P>(async ({ req, user, params }) => {
     case "distribute": return distributeTask(user, id, await req.json());
     case "review": return reviewTask(user, id, await req.json());
     case "schedule": return scheduleTask(user, id, await req.json());
+    case "plan": return planTask(user, id, await req.json());
     case "comments": return addComment(user, id, await req.json());
     case "checklist": return addChecklistItem(user, id, z.object({ text: z.string() }).parse(await req.json()).text);
     case "dependencies": return addDependency(user, id, z.object({ dependsOnId: z.string() }).parse(await req.json()).dependsOnId);

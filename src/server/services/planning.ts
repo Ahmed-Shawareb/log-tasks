@@ -31,7 +31,7 @@ export async function calendarFeed(actor: SessionUser, from: Date, to: Date, f: 
 export async function workloadBoard(actor: SessionUser, opts: { start?: string; days?: number; department?: string; teamId?: string; projectId?: string }) {
   if (!isManager(actor)) throw forbidden("The team schedule is for managers.");
   const start = opts.start ? startOfZonedDay(new Date(opts.start)) : startOfZonedDay(new Date());
-  const days = Math.min(Math.max(opts.days ?? 7, 1), 14);
+  const days = Math.min(Math.max(opts.days ?? 7, 1), 31);
   const end = addDays(start, days);
   const peopleWhere: Prisma.UserWhereInput = {
     AND: [
@@ -57,7 +57,7 @@ export async function workloadBoard(actor: SessionUser, opts: { start?: string; 
     db.task.findMany({
       where: {
         AND: [scope, { assigneeId: { in: ids }, status: { notIn: ["CANCELLED"] } }, {
-          OR: [{ scheduledStart: { lt: end }, scheduledEnd: { gt: start } }, { dueAt: { gte: start, lt: end } }, { scheduledStart: null, dueAt: null, status: { notIn: ["APPROVED"] } }],
+          OR: [{ scheduledStart: { lt: end }, scheduledEnd: { gt: start } }, { dueAt: { gte: start, lt: end } }, { plannedAt: { gte: start, lt: end } }, { scheduledStart: null, dueAt: null, status: { notIn: ["APPROVED"] } }],
         }],
       },
       include: taskListInclude,

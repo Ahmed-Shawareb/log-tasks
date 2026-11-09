@@ -216,6 +216,13 @@ export function TaskDetailView({ id, onClose, variant = "drawer" }: { id: string
               <MetaRow label="Reviewer">{task.reviewer?.name ?? <span className="text-muted">Responsible manager</span>}</MetaRow>
               <MetaRow label="Created by">{task.creator.name}</MetaRow>
               <MetaRow label="Deadline"><span className={cn(overdue && "text-red-400")}>{fmtDateTime(task.dueAt)}</span></MetaRow>
+              {task.plannedAt && (
+                <MetaRow label="Planned finish">
+                  <span className={cn(task.dueAt && new Date(task.plannedAt) > new Date(task.dueAt) ? "text-red-400" : "text-sky-400")}>
+                    {new Date(task.plannedAt).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })}{task.dueAt && new Date(task.plannedAt) > new Date(task.dueAt) ? " · after the deadline" : ""}
+                  </span>
+                </MetaRow>
+              )}
               <MetaRow label="Scheduled">{task.scheduledStart ? <>{fmtDateTime(task.scheduledStart)}<br /><span className="text-xs text-muted">until {new Date(task.scheduledEnd!).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}</span></> : <span className="text-muted">Not scheduled</span>}</MetaRow>
             </div>
             {task.parent && (

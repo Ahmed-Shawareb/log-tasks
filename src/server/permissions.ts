@@ -24,6 +24,13 @@ export const isDeptManager = (u: SessionUser) => u.role === "PERFORMANCE_MANAGER
 export const isManager = (u: SessionUser) => isAdmin(u) || isAccountManager(u) || isDeptManager(u);
 export const isWorker = (u: SessionUser) => isWorkerRole(u.role);
 export const isSocialSpecialist = (u: SessionUser) => u.role === "SOCIAL_MEDIA_SPECIALIST";
+export const isExternal = (u: SessionUser) => u.role === "EXTERNAL";
+
+// ── Externals ──
+// Outsourced people work for the founder only: nobody else sees them in any list, picks them, or gives them work,
+// and they themselves see nothing of the agency — only their own tasks, on their own calendar.
+export const canUseExternals = (u: SessionUser) => u.canOwnPrivateClients;
+export const hideExternals = (u: SessionUser): Prisma.UserWhereInput => (canUseExternals(u) ? {} : { OR: [{ id: u.id }, { NOT: { role: "EXTERNAL" } }] });
 export const managerDeptKey = (u: SessionUser) => MANAGER_DEPARTMENT[u.role] ?? null;
 
 // ── Private (personal) clients ──
@@ -68,6 +75,7 @@ export function projectScope(u: SessionUser): Prisma.ProjectWhereInput {
 function baseProjectScope(u: SessionUser): Prisma.ProjectWhereInput {
   if (isAdmin(u)) return {};
   if (isAccountManager(u)) return { accountManagerId: u.id };
+  if (isExternal(u)) return { id: "__none__" }; // externals open no project pages (a social media task's grid is reached through the task)
   if (isSocialSpecialist(u)) return { OR: [{ kind: "SOCIAL_MEDIA" }, { tasks: { some: { AND: [{ assigneeId: u.id }, { archivedAt: null }] } } }] };
   // Managers / employees see projects they have visible work in.
   return { tasks: { some: { AND: [taskScope(u), { archivedAt: null }] } } };
@@ -92,6 +100,10 @@ export const notPlan: Prisma.TaskWhereInput = { NOT: { stage: null, parentId: nu
 
 /** Users whose schedules / workload this user may inspect. */
 export function peopleScope(u: SessionUser): Prisma.UserWhereInput {
+  return { AND: [basePeopleScope(u), hideExternals(u)] };
+}
+
+function basePeopleScope(u: SessionUser): Prisma.UserWhereInput {
   if (isAdmin(u)) return {};
   if (isAccountManager(u)) {
     // Their own team, plus the shared Production / Performance departments every account manager books.
@@ -100,7 +112,7 @@ export function peopleScope(u: SessionUser): Prisma.UserWhereInput {
         { id: u.id },
         { role: { in: ["PERFORMANCE_MANAGER", "PRODUCTION_MANAGER"] } },
         { role: "EMPLOYEE", department: { key: { in: SHARED_DEPARTMENTS } } },
-        { role: { in: ["SOCIAL_MEDIA_SPECIALIST", "EXTERNAL"] } },
+        { role: "SOCIAL_MEDIA_SPECIALIST" },
         { memberships: { some: { team: { managerId: u.id } } } },
       ],
     };

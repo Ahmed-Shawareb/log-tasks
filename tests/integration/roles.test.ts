@@ -44,8 +44,10 @@ describe("social media specialist and external roles", () => {
 
   it("an external works on the tasks given to them exactly like an employee, and sees nothing else", async () => {
     const am = await as(EMAILS.am);
+    const founderRow = await db.user.create({ data: { name: "Founder Ext", email: `founder.ext.${Date.now()}@log.local`, role: "ADMIN", passwordHash: "x", canOwnPrivateClients: true }, include: { department: true } });
+    const founder = toSessionUser(founderRow);
     const ext = await person("EXTERNAL", "Outsourced editor");
-    const t = await createTask(am, { title: "Outsourced edit", assigneeId: ext.id, dueAt: day(8) });
+    const t = await createTask(founder, { title: "Outsourced edit", assigneeId: ext.id, dueAt: day(8) });
     expect((await listTasks(ext, { pageSize: 100 })).items.map((i) => i.id)).toEqual([t.id]);
     await changeStatus(ext, t.id, { status: "IN_PROGRESS" });
     expect((await db.task.findUniqueOrThrow({ where: { id: t.id } })).status).toBe("IN_PROGRESS");

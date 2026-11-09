@@ -18,13 +18,23 @@ export function KindIcon({ kind, className }: { kind: FeedPost["kind"]; classNam
   return null;
 }
 
+/**
+ * Squares in profile order: like a real feed, post 1 (the oldest) is at the bottom right and the numbers count up
+ * toward the top left. When the count isn't a multiple of 3 the top row starts with empty space (null).
+ */
+export function gridSlots<T extends { position: number }>(posts: T[]): (T | null)[] {
+  const newestFirst = [...posts].sort((a, b) => b.position - a.position);
+  return [...Array<null>((3 - (posts.length % 3)) % 3).fill(null), ...newestFirst];
+}
+
 /** `onSwap`: drag a square onto another one and they change places. */
 export function FeedGrid({ posts, onPick, onSwap, editable, className }: { posts: FeedPost[]; onPick?: (p: FeedPost) => void; onSwap?: (fromId: string, toId: string) => void; editable?: boolean; className?: string }) {
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
   return (
     <div className={cn("grid grid-cols-3 gap-[3px] overflow-hidden rounded-xl bg-[var(--line)]", className)}>
-      {posts.map((p) => {
+      {gridSlots(posts).map((p, i) => {
+        if (!p) return <div key={`gap-${i}`} aria-hidden className="aspect-[4/5] bg-panel-solid/40" />;
         const cover = p.media[0];
         return (
           <button key={p.id} type="button" onClick={() => onPick?.(p)} disabled={!onPick}
@@ -63,7 +73,8 @@ export function FeedGrid({ posts, onPick, onSwap, editable, className }: { posts
 export async function downloadGrid(posts: FeedPost[], fileName: string) {
   const W = 1080, gap = 6, cols = 3;
   const cw = (W - gap * (cols - 1)) / cols, ch = (cw * 5) / 4;
-  const rows = Math.ceil(posts.length / cols);
+  const slots = gridSlots(posts);
+  const rows = Math.ceil(slots.length / cols);
   const canvas = document.createElement("canvas");
   canvas.width = W;
   canvas.height = Math.max(1, Math.round(rows * ch + (rows - 1) * gap));
@@ -75,8 +86,9 @@ export async function downloadGrid(posts: FeedPost[], fileName: string) {
     if (!r.ok) return null;
     return createImageBitmap(await r.blob());
   };
-  const images = await Promise.all(posts.map((p) => (p.media[0] ? load(p.media[0]).catch(() => null) : Promise.resolve(null))));
-  posts.forEach((p, i) => {
+  const images = await Promise.all(slots.map((p) => (p?.media[0] ? load(p.media[0]).catch(() => null) : Promise.resolve(null))));
+  slots.forEach((p, i) => {
+    if (!p) return; // the empty start of the top row
     const x = (i % cols) * (cw + gap), y = Math.floor(i / cols) * (ch + gap);
     const img = images[i];
     if (img) {

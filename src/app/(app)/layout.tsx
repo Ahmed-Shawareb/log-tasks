@@ -11,7 +11,10 @@ import { requirePageUser } from "@/server/session";
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requirePageUser();
   // Signed in with a one-time / shared password: nowhere else until they pick their own.
-  if (user.mustChangePassword && !((await headers()).get("x-pathname") ?? "").startsWith("/settings")) redirect("/settings?changePassword=1");
+  const path = (await headers()).get("x-pathname") ?? "";
+  if (user.mustChangePassword && !path.startsWith("/settings")) redirect("/settings?changePassword=1");
+  // Externals see nothing of the agency: only their own calendar (and their settings).
+  if (user.role === "EXTERNAL" && !path.startsWith("/my-calendar") && !path.startsWith("/settings")) redirect("/my-calendar");
   return (
     <AppProvider user={user}>
       <Aurora />

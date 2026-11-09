@@ -16,14 +16,16 @@ import { Avatar, Button } from "./ui";
 import { useApp } from "./app-context";
 import { CommandPalette } from "./command-palette";
 
-type NavItem = { href: string; label: string; icon: typeof LayoutDashboard; roles?: string[] };
+type NavItem = { href: string; label: string; icon: typeof LayoutDashboard; roles?: string[]; notFor?: string[] };
 const NAV: { section: string; items: NavItem[] }[] = [
   {
     section: "Work",
     items: [
-      { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-      { href: "/calendar", label: "Calendar & planner", icon: CalendarDays },
-      { href: "/board", label: "Board", icon: KanbanSquare },
+      // Externals have one page: their own calendar.
+      { href: "/my-calendar", label: "My calendar", icon: CalendarDays, roles: ["EXTERNAL"] },
+      { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, notFor: ["EXTERNAL"] },
+      { href: "/calendar", label: "Calendar & planner", icon: CalendarDays, notFor: ["EXTERNAL"] },
+      { href: "/board", label: "Board", icon: KanbanSquare, notFor: ["EXTERNAL"] },
       { href: "/tasks", label: "All tasks", icon: ClipboardList, roles: ["ADMIN", "ACCOUNT_MANAGER", "PERFORMANCE_MANAGER", "PRODUCTION_MANAGER"] },
       { href: "/team", label: "Team planner", icon: UsersRound, roles: ["ADMIN", "ACCOUNT_MANAGER", "PERFORMANCE_MANAGER", "PRODUCTION_MANAGER"] },
     ],
@@ -35,7 +37,7 @@ const NAV: { section: string; items: NavItem[] }[] = [
       { href: "/projects", label: "Projects", icon: Briefcase, roles: ["ADMIN", "ACCOUNT_MANAGER", "SOCIAL_MEDIA_SPECIALIST"] },
       { href: "/feeds", label: "Social feeds", icon: LayoutGrid, roles: ["ADMIN", "ACCOUNT_MANAGER", "SOCIAL_MEDIA_SPECIALIST"] },
       { href: "/reports", label: "Reports", icon: BarChart3, roles: ["ADMIN", "ACCOUNT_MANAGER", "PERFORMANCE_MANAGER", "PRODUCTION_MANAGER"] },
-      { href: "/availability", label: "Leave & availability", icon: CalendarOff },
+      { href: "/availability", label: "Leave & availability", icon: CalendarOff, notFor: ["EXTERNAL"] },
     ],
   },
   {
@@ -70,7 +72,7 @@ function Sidebar({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: (
         {collapsed ? <LogMark className="mx-auto block" /> : <LogLogo />}
       </Link>
       {NAV.map((s) => {
-        const items = s.items.filter((i) => !i.roles || i.roles.includes(user.role));
+        const items = s.items.filter((i) => (!i.roles || i.roles.includes(user.role)) && !i.notFor?.includes(user.role));
         if (!items.length) return null;
         return (
           <div key={s.section}>

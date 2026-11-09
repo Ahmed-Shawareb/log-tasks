@@ -6,7 +6,7 @@ import { MANAGER_DEPARTMENT, ROLES, isWorkerRole } from "@/lib/constants";
 import { AppError, forbidden, invalid, notFound } from "../errors";
 import { audit } from "../audit";
 import { createResetToken, generatePassword, hashPassword, unusablePasswordHash } from "../auth";
-import { isAdmin, isManager, peopleScope, type SessionUser } from "../permissions";
+import { canUseExternals, hideExternals, isAdmin, isManager, peopleScope, type SessionUser } from "../permissions";
 
 const requireAdmin = (u: SessionUser) => {
   if (!isAdmin(u)) throw forbidden("Administrator access required.");
@@ -49,7 +49,7 @@ export async function eligibleAssignees(actor: SessionUser, _deptKey?: string | 
     actor.role === "ADMIN" ? {}
     : actor.role === "ACCOUNT_MANAGER" ? peopleScope(actor)
     : { OR: [{ id: actor.id }, { department: { key: mgrDept! } }] };
-  return db.user.findMany({ where: { AND: [{ isActive: true }, scope] }, select: publicUserSelect, orderBy: [{ role: "asc" }, { name: "asc" }] });
+  return db.user.findMany({ where: { AND: [{ isActive: true }, scope, hideExternals(actor)] }, select: publicUserSelect, orderBy: [{ role: "asc" }, { name: "asc" }] });
 }
 
 const workSchema = {
@@ -88,9 +88,16 @@ function checkHours(w: { workStartMin?: number; workEndMin?: number }) {
 }
 
 /** Creates the user with no usable password and returns a one-time setup link (no email service needed). */
+/** Externals are the founder's own people: only they create or change those accounts. */
+function assertExternalsAllowed(actor: SessionUser, ...roles: (string | undefined)[]) {
+  if (roles.includes("EXTERNAL") && !canUseExternals(actor)) throw forbidden("External accounts are managed by the founder only.");
+}
+
 export async function createUser(actor: SessionUser, raw: unknown) {
   requireAdmin(actor);
   const input = userSchema.parse(raw);
+  assertExternalsAllowed(actor, input.role);
+  if (input.role === "EXTERNAL") { input.department = null; input.teamIds = []; } // no team, no department
   checkHours(input);
   if (await db.user.findUnique({ where: { email: input.email } })) throw new AppError("CONFLICT", "A user with that email already exists.");
   const departmentId = await deptIdForRole(input.role, input.department);
@@ -124,6 +131,8 @@ export async function updateUser(actor: SessionUser, id: string, raw: unknown) {
   }
 
   const input = userSchema.partial().extend({ isActive: z.boolean().optional(), bio: z.string().max(1000).nullable().optional() }).parse(raw);
+  assertExternalsAllowed(actor, before.role, input.role);
+  if ((input.role ?? before.role) === "EXTERNAL") { input.department = null; input.teamIds = []; }
   checkHours({ workStartMin: input.workStartMin ?? before.workStartMin, workEndMin: input.workEndMin ?? before.workEndMin });
   if (self && (input.isActive === false || (input.role && input.role !== "ADMIN"))) {
     throw invalid("You cannot deactivate or demote your own account.");
@@ -167,6 +176,7 @@ export async function issueResetLink(actor: SessionUser, id: string) {
   requireAdmin(actor);
   const user = await db.user.findUnique({ where: { id } });
   if (!user) throw notFound("User");
+  assertExternalsAllowed(actor, user.role);
   const token = await createResetToken(user.id, actor.id);
   await audit(actor, "user.reset_link", "User", user.id);
   return { resetPath: `/reset-password?token=${token}`, expiresInMinutes: 60 };
@@ -174,6 +184,9 @@ export async function issueResetLink(actor: SessionUser, id: string) {
 
 export async function setTemporaryPassword(actor: SessionUser, id: string) {
   requireAdmin(actor);
+  const target = await db.user.findUnique({ where: { id }, select: { role: true } });
+  if (!target) throw notFound("User");
+  assertExternalsAllowed(actor, target.role);
   const pw = generatePassword();
   await db.user.update({ where: { id }, data: { passwordHash: await hashPassword(pw), mustChangePassword: true } });
   await db.session.deleteMany({ where: { userId: id } });

@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Briefcase, CalendarDays, Plus, Search } from "lucide-react";
@@ -23,8 +23,17 @@ export function ProjectsClient() {
   const router = useRouter();
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("");
+  // Client filter (also from a link: /projects?client=<id>). Its choices are the clients of the projects you can see.
+  const [clientId, setClientId] = useState("");
+  const [clients, setClients] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => { const c = new URLSearchParams(window.location.search).get("client"); if (c) setClientId(c); }, []);
   const [creating, setCreating] = useState(false);
-  const { data, error, loading } = useFetch<Project[]>(`/api/projects${qs({ q, status })}`);
+  const { data, error, loading } = useFetch<Project[]>(`/api/projects${qs({ q, status, clientId })}`);
+  useEffect(() => {
+    if (!data || clientId || q) return;
+    const seen = new Map(data.map((p) => [p.client.id, p.client.name]));
+    setClients((prev) => { for (const c of prev) if (!seen.has(c.id)) seen.set(c.id, c.name); return [...seen].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)); });
+  }, [data, clientId, q]);
   const canCreate = user.role === "ADMIN" || user.role === "ACCOUNT_MANAGER";
 
   return (
@@ -36,6 +45,10 @@ export function ProjectsClient() {
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
           <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search projects or clients" className="pl-9" aria-label="Search projects" />
         </div>
+        <Select className="w-auto min-w-40" value={clientId} onChange={(e) => setClientId(e.target.value)} aria-label="Client">
+          <option value="">All clients</option>
+          {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </Select>
         <Select className="w-auto min-w-40" value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Status">
           <option value="">All except archived</option>
           {PROJECT_STATUSES.map((s) => <option key={s} value={s}>{humanize(s)}</option>)}
