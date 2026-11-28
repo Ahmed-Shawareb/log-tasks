@@ -42,7 +42,7 @@ export function LoginForm({ devAccounts }: { devAccounts: { role: string; email:
     <div className="grid min-h-dvh lg:grid-cols-[1.1fr_1fr]">
       {/* Brand side */}
       <div className="relative hidden flex-col justify-between overflow-hidden p-12 lg:flex">
-        <LogLogo />
+        <Link href="/" aria-label="LOG website" className="self-start"><LogLogo /></Link>
         <div className="relative">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7 }}>
             <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-line bg-panel px-3 py-1 text-xs text-fg-2 backdrop-blur">
@@ -72,7 +72,7 @@ export function LoginForm({ devAccounts }: { devAccounts: { role: string; email:
       <div className="flex items-center justify-center p-6">
         <motion.div initial={{ opacity: 0, y: 24, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ type: "spring", stiffness: 200, damping: 24 }}
           className="glass-strong gradient-border w-full max-w-md rounded-3xl p-8">
-          <div className="mb-8 lg:hidden"><LogLogo /></div>
+          <Link href="/" aria-label="LOG website" className="mb-8 block lg:hidden"><LogLogo /></Link>
           <h2 className="font-display text-3xl font-bold">Sign in</h2>
           <p className="mt-1 text-sm text-muted">Use your LOG work account.</p>
 

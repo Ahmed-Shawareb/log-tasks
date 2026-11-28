@@ -3,7 +3,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
-import { LayoutGrid,
+import { Inbox, LayoutGrid,
   BarChart3, Bell, Briefcase, Building2, CalendarDays, CalendarOff, ChevronsLeft, ClipboardList, Command, KanbanSquare,
   LayoutDashboard, LogOut, Menu, Moon, Plus, ScrollText, Settings, Shapes, Sun, Timer, UserCog, Users, UsersRound, X,
 } from "lucide-react";
@@ -45,6 +45,7 @@ const NAV: { section: string; items: NavItem[] }[] = [
   {
     section: "Admin",
     items: [
+      { href: "/admin/leads", label: "Leads", icon: Inbox, roles: ["ADMIN"] },
       { href: "/admin/users", label: "Users", icon: UserCog, roles: ["ADMIN"] },
       { href: "/admin/teams", label: "Teams", icon: Users, roles: ["ADMIN"] },
       { href: "/admin/task-types", label: "Task types", icon: Shapes, roles: ["ADMIN"] },

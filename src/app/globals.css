@@ -240,3 +240,20 @@ body {
 .prose-log p { margin: 0.35rem 0; }
 .prose-log ul { list-style: disc; padding-left: 1.2rem; }
 .prose-log strong { color: var(--fg); }
+
+/* ─────────────── Public website (/) — the LOG brand site ─────────────── */
+@theme {
+  --color-log-pearl: #fdfdf6;
+  --color-log-black: #000000;
+  --color-log-red: #c1392b;
+  --color-log-blue: #204f90;
+  --color-log-grey: #424242;
+}
+.site { background: #000; color: #fdfdf6; font-family: var(--font-inter), sans-serif; }
+.site ::selection { background-color: #c1392b; color: #fdfdf6; }
+.grain-overlay {
+  position: fixed; inset: 0; pointer-events: none; z-index: 9999; opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+}
+.showreel-scroll { scrollbar-width: none; -ms-overflow-style: none; }
+.showreel-scroll::-webkit-scrollbar { display: none; }

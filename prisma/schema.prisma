@@ -605,6 +605,23 @@ model AuditLog {
   @@index([actorId])
 }
 
+/// A request sent from the public website's contact form ("Start a project").
+model Lead {
+  id          String    @id @default(cuid())
+  fullName    String
+  companyName String?
+  email       String
+  phone       String?
+  service     String?
+  budget      String?
+  message     String?
+  ipAddress   String?
+  handledAt   DateTime? // an admin marked it as dealt with
+  createdAt   DateTime  @default(now())
+
+  @@index([createdAt])
+}
+
 model Setting {
   key       String   @id
   value     Json

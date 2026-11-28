@@ -8,8 +8,8 @@ const PUBLIC = ["/login", "/forgot-password", "/reset-password", "/portal", "/sp
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const hasSession = request.cookies.has(SESSION_COOKIE);
-  if (pathname === "/") return NextResponse.redirect(new URL(hasSession ? "/dashboard" : "/login", request.url));
-  if (!hasSession && !PUBLIC.some((p) => pathname.startsWith(p))) {
+  // "/" is the public LOG website (it links to the team's sign-in and the clients' dashboards).
+  if (!hasSession && pathname !== "/" && !PUBLIC.some((p) => pathname.startsWith(p))) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
   // Lets server layouts know the page being opened (used to hold people on Settings until they change their password).
